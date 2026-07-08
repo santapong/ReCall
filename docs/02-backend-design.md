@@ -84,6 +84,8 @@ LIMIT 5;
 
 Probe note: some mid-2025 sources show vector indexing behind `SET CLUSTER SETTING feature.vector_index.enabled = true`. Check on the fresh cluster; record the answer here.
 
+Pre-probe research (Jul 8, sources in `scripts/probe_runbook.md`): flag confirmed for v25.2+ (C-SPANN, public preview; non-empty tables also need `sql_safe_updates = false` to backfill); **Basic-tier vector-index support is at risk** — test `CREATE VECTOR INDEX` first and use the runbook's fallback tree if blocked; managed MCP documents service-account API keys for headless auth (Branch A becomes possible; Branch B stays the recommended demo shape). Both `DECISION PENDING PROBE` markers remain open until the live cluster answers.
+
 ## The 4-tool contract (AC4 — this list is closed)
 
 ```
