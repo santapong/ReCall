@@ -20,7 +20,7 @@ Alert fires → Lambda ingests → agent (Claude on AWS Bedrock) searches Cockro
 | `docs/06-claude-code-harness.md` | How to work: session loop, doc policy, ODD, subagents | Every session, before coding |
 | `docs/07-branching-worktrees.md` | Branch roles, merge flow, worktree layout + helper | Before creating any branch or worktree |
 
-Top-level folder indexes (read the folder's `index.md` before working in it): `docs/` · `infra/` · `lambda/` · `prompts/` · `scripts/` · `status_page/` · `tests/`.
+Top-level folder indexes (read the folder's `index.md` before working in it): `.claude/` (the executable harness — skills, hooks, worker contract) · `docs/` · `infra/` · `lambda/` · `prompts/` · `scripts/` · `status_page/` · `tests/`.
 
 ## Hard rules — never violate
 
@@ -54,6 +54,8 @@ uv run python infra/seed/generate.py   # P1 — stub until the corpus lands (mak
 make deploy             # P2 — zip + update Lambda (see 05-code-patterns)
 scripts/wt.sh new feature/<slug>       # branch + worktree per docs/07
 ```
+
+Harness skills (docs/06–07 as machinery, see `.claude/index.md`): `/session-loop` · `/start-work` · `/verify` · `/record` · `/gate-check`. SessionStart hook injects orientation; the Stop hook enforces "never end a session red".
 
 ## Definition of done
 

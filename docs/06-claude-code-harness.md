@@ -81,3 +81,19 @@ Working economics for this project: a single agent runs ≈4× chat-baseline tok
 ## The verifier is ground truth
 
 `pytest` green is the definition of done — not the transcript saying "done." AC tests are the gates. `make deploy` is the only deploy path. If the Makefile can't do it, demo day can't either.
+
+## Operationalized — this spec runs as machinery (added Jul 8)
+
+The loop above is executable via `.claude/` (see `.claude/index.md` for the full map):
+
+| Spec section | Machinery |
+|---|---|
+| Session loop steps 1 (Orient) | `SessionStart` hook injects WORKLOG tail + phase; web sessions also `uv sync` |
+| Session loop steps 2–6 | `/session-loop` skill (plan→build→verify→record→commit, ODD triggers inline) |
+| Verifier is ground truth | `/verify` skill + a `Stop` hook that blocks ending a session red (once, with the failure tail) |
+| Record + registration chain | `/record` skill |
+| Branch/worktree flow (docs/07) | `/start-work` skill |
+| Phase gates & ACs (docs/01) | `/gate-check` skill |
+| Subagent worker contract | `.claude/agents/worker.md` |
+
+Skills restate the rules here in imperative form; they never override them. Drift between a skill and this file is a bug — fix both in the same commit.
