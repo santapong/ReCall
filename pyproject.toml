@@ -1,0 +1,28 @@
+[project]
+name = "recall"
+version = "0.1.0"
+description = "Recall — on-call incident copilot whose memory survives the outages it diagnoses (CockroachDB × AWS hackathon)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.34",
+    "psycopg[binary]>=3.1",
+    "pydantic>=2.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# lambda/ holds flat modules (import tools, import db) — same namespace the AWS
+# Lambda runtime sees at the zip root. See lambda/index.md.
+pythonpath = ["lambda"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

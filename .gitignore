@@ -1,0 +1,19 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# secrets — .env.example is the committed template
+.env
+
+# build artifacts (make deploy)
+build/
+dist/
+*.zip
+
+# safety net if a worktree ever lands inside the repo (canonical home is ../Roll.worktrees/)
+.worktrees/
+
+.DS_Store
