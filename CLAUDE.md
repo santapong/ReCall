@@ -50,7 +50,7 @@ uv run pytest           # structural tests now; AC2 eval joins at P1
 uv run ruff check .     # lint — works now (make lint / make fmt)
 make probe              # P0: vector probe against your cluster (needs CRDB_CONN_STRING)
 make migrate            # apply infra/migrations/*.sql in order
-uv run python infra/seed/generate.py   # P1 — stub until the corpus lands (make seed)
+uv run python infra/seed/generate.py   # regenerate corpus + eval fixtures (make seed) — works now
 make deploy             # P2 — zip + update Lambda (see 05-code-patterns)
 scripts/wt.sh new feature/<slug>       # branch + worktree per docs/07
 ```
