@@ -54,7 +54,7 @@ make probe              # P0: vector probe against your cluster (needs CRDB_CONN
 make migrate            # apply infra/migrations/*.sql in order
 uv run python infra/seed/generate.py   # regenerate corpus + eval fixtures (make seed) — works now
 make deploy             # P2 — zip + update Lambda (see 05-code-patterns)
-scripts/wt.sh new feature/<slug>       # branch + worktree per docs/07
+scripts/wt.sh new feat/<slug>          # branch + worktree per docs/07 (base: develop)
 ```
 
 Harness skills (docs/06–07 as machinery, see `.claude/index.md`): `/session-loop` · `/start-work` · `/verify` · `/record` · `/gate-check`. SessionStart hook injects orientation; the Stop hook enforces "never end a session red".

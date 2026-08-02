@@ -1,11 +1,11 @@
 # Fast suite on every PR and on the long-lived branches (docs/07 CI mapping).
 # The full suite (single-node cockroach service + AC2 eval) is added to pushes on
-# `test` in P1, when the first DB-backed test exists — mocked-DB tests stay banned.
+# `release/**` in P1, when the first DB-backed test exists — mocked-DB tests stay banned.
 name: ci
 
 on:
   push:
-    branches: [main, test, dev]
+    branches: [main, develop, 'release/**']
   pull_request:
 
 jobs:
