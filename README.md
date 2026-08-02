@@ -11,9 +11,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-P0%20·%20probe-e6a53f)](docs/01-objective-roadmap.md)
 
-**CockroachDB × AWS hackathon entry** · built solo, in the open · submission **Aug 15, 2026**
+**CockroachDB × AWS hackathon entry** · built solo, in the open · submission target **Aug 17, 2026**
 
 [How it works](#how-it-works) ·
+[Architecture](#architecture) ·
 [Memory design](#memory-design--three-layers) ·
 [Why CockroachDB](#why-cockroachdb) ·
 [Quickstart](#quickstart) ·
@@ -25,7 +26,10 @@
 ---
 
 > **Status — P0, foundation probe.** The design is locked and fully documented in [`docs/`](docs/index.md);
-> the [roadmap](#roadmap) below tracks what is real today. No demo URL or video yet — those land at P3–P5.
+> the [roadmap](#roadmap) below tracks what is real today. The memory layer's retrieval, ranking and
+> confidence logic are implemented and unit-tested; they go live against a cluster the day the probe
+> lands. No demo URL or video yet — those come at P3–P5. Changes are logged in
+> [`CHANGELOG.md`](CHANGELOG.md).
 
 ## The problem
 
@@ -37,18 +41,7 @@ helping diagnose.
 
 ## How it works
 
-```mermaid
-flowchart TD
-    Alert["🔔 Alert fires (curl / UI button)"] --> Lambda["AWS Lambda — ingest_handler"]
-    Lambda -->|"Converse API + tools"| Agent["Agent — Claude on AWS Bedrock"]
-    Agent -->|"calls"| Tools["tools.py — the 4-tool contract"]
-    Tools -->|"parameterized SQL"| DB[("CockroachDB Cloud — distributed vector index")]
-    DB --> Episodic["incidents · episodic"]
-    DB --> Semantic["runbooks · semantic"]
-    DB --> Working["working_state · active"]
-    Agent -->|"diagnosis + confidence"| Page["status page"]
-    Page -.->|"close incident"| Tools
-```
+<p align="center"><img src="docs/diagrams/c4-context.svg" alt="C4 Level 1 — system context: an on-call engineer and an alerting system interact with Recall, which depends on AWS Bedrock" width="100%"></p>
 
 1. An alert POSTs to a Lambda Function URL; ingest is idempotent (same alert twice = same incident).
 2. The agent embeds the alert and searches CockroachDB's **distributed vector index** for the closest
@@ -61,6 +54,30 @@ flowchart TD
 
 **Signature demo:** kill a database node mid-diagnosis, live on camera. The in-flight answer
 completes; row counts stay identical; the incident clock never stops.
+
+## Architecture
+
+Documented as a [C4](https://c4model.com) set — hand-authored SVG in [`docs/diagrams/`](docs/diagrams),
+no build step and no diagram toolchain to install. Each level zooms into the box the previous one drew.
+
+### Containers — the three deployable pieces
+
+<p align="center"><img src="docs/diagrams/c4-container.svg" alt="C4 Level 2 — containers: one AWS Lambda, one CockroachDB cluster, one static status page" width="100%"></p>
+
+One Lambda, one database, one static page. That's the whole system, and the sparseness is a decision:
+every additional moving part is a part that can fail during a live demo.
+
+### Components — the boundaries the test suite enforces
+
+<p align="center"><img src="docs/diagrams/c4-component.svg" alt="C4 Level 3 — components inside the Lambda: ingest_handler, agent, tools, db, embed, scrub, and the enforced boundaries between them" width="100%"></p>
+
+The amber boxes are the invariants the pitch rests on, and none of them are honour-system: `agent.py`
+importing psycopg, an `INSERT` outside `tools.py`, or a fifth tool in the manifest each fail
+[`tests/test_module_boundaries.py`](tests/test_module_boundaries.py) and
+[`tests/test_manifest.py`](tests/test_manifest.py) in CI.
+
+There is deliberately no L4 code-level diagram — the code *is* the L4, and a diagram duplicating it
+would rot the first time someone renamed a function.
 
 ## Memory design — three layers
 
@@ -128,17 +145,18 @@ make migrate                 # apply infra/migrations/*.sql in order
 
 ## Roadmap
 
-Gate-exited phases, dates fixed — full detail and 13 acceptance criteria in
-[`docs/01-objective-roadmap.md`](docs/01-objective-roadmap.md).
+Gate-exited phases. The 13 acceptance criteria live in
+[`docs/01-objective-roadmap.md`](docs/01-objective-roadmap.md); the live calendar is
+[`docs/08-final-sprint.md`](docs/08-final-sprint.md).
 
 | Phase | Window | Exit criterion | |
 |---|---|---|---|
-| **P0 · Probe** | → Jul 8 | live cluster + vector query + Bedrock access requested | 🟡 in progress |
-| **P1 · Memory foundation** | Jul 8–12 | planted incident retrieved top-3 from CLI; ~80-postmortem corpus | ⚪ |
-| **P2 · Agent loop** | Jul 13–26 | `curl` an alert → diagnosis citing a real incident + runbook | ⚪ |
-| **P3 · Surface** | Jul 27–Aug 2 | live status page; demo script ≤3 min | ⚪ |
-| **P4 · Resilience** | Aug 3–9 | node-kill rehearsal recorded, zero row loss verified | ⚪ |
-| **P5 · Ship** | Aug 10–15 | video ≤3:00 up; Devpost submission confirmed | ⚪ |
+| **P0 · Probe** | Aug 2 | live cluster + vector query + Bedrock access requested | 🟡 in progress |
+| **P1 · Memory foundation** | Aug 3–7 | planted incident retrieved top-3 from CLI; 80-postmortem corpus | 🟡 corpus + retrieval logic done, awaiting a cluster |
+| **P2 · Agent loop** | Aug 8–12 | `curl` an alert → diagnosis citing a real incident + runbook | ⚪ |
+| **P3 · Surface** | Aug 13–14 | live status page; demo script ≤3 min | ⚪ |
+| **P4 · Resilience** | Aug 15–16 | node-kill rehearsal recorded, zero row loss verified | ⚪ |
+| **P5 · Ship** | Aug 17–18 | video ≤3:00 up; Devpost submission confirmed | ⚪ |
 
 ## Development
 

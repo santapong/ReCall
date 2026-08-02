@@ -4,18 +4,17 @@
 
 Serverless, one Python package, deliberately not decomposed: **one Lambda** (`ingest_handler`), plus a second (`sleep_cycle_cron`) only if the stretch gate fires. No API gateway layer beyond a Lambda Function URL, no queue, no second data store. Every additional moving part is a part that can fail during the demo.
 
-```mermaid
-flowchart TD
-    Alert["Alert fires (curl / UI button)"] --> Lambda["AWS Lambda: ingest_handler"]
-    Lambda -->|"Converse API + tools"| Agent["Agent: Claude on AWS Bedrock"]
-    Agent -->|"calls"| Tools["tools.py — the 4-tool contract"]
-    Tools -->|"parameterized SQL"| DB[("CockroachDB Cloud")]
-    DB --> Episodic["incidents (episodic)"]
-    DB --> Semantic["runbooks (semantic)"]
-    DB --> Working["working_state (active)"]
-    Agent -->|"diagnosis + confidence"| Page["status page"]
-    Page -.->|"close incident"| Tools
-```
+Architecture is documented as a [C4](https://c4model.com) set in [`docs/diagrams/`](diagrams/) — SVG, no build step. Read them in order; each one zooms into the box the previous one drew.
+
+| | |
+|---|---|
+| [`c4-context.svg`](diagrams/c4-context.svg) | **L1 · Context** — an on-call engineer and an alerting system on one side, AWS Bedrock on the other |
+| [`c4-container.svg`](diagrams/c4-container.svg) | **L2 · Container** — the three deployable pieces: one Lambda, one CockroachDB, one static page |
+| [`c4-component.svg`](diagrams/c4-component.svg) | **L3 · Component** — the modules inside the zip and the boundaries `tests/` asserts |
+
+![Recall containers](diagrams/c4-container.svg)
+
+The container view is the one to reach for in review: it shows why "one Lambda" is a decision and not an omission, and it is where the propose-only data path is visible at a glance.
 
 ## Runtime DB path — RESOLVED 2026-08-02 · Branch B (decision D2, `docs/08`)
 
