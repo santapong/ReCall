@@ -10,7 +10,13 @@ below are those criteria, defined in [`docs/01-objective-roadmap.md`](docs/01-ob
 
 ## [Unreleased]
 
-### 2026-08-02 — architecture diagrams, sprint plan, memory core
+### 2026-08-02 — architecture diagrams, sprint plan, memory core · tagged `w1`
+
+**Frozen as `w1`** — the first runnable increment (`docs/07` KPI). What is real at this tag: the
+seven-document design pack plus the sprint plan, the deterministic 80-postmortem corpus, the
+blameless scrubber, the retrieval/ranking/confidence logic with 26 green tests, and the C4
+architecture set. What is *not*: nothing has run against a live cluster or a live model. The P0
+probe is the next thing that moves, and it is human-gated.
 
 #### Added
 - **C4 architecture diagrams** in `docs/diagrams/` — Context, Container and Component levels as
