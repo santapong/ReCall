@@ -14,11 +14,12 @@ Alert fires → Lambda ingests → agent (Claude on AWS Bedrock) searches Cockro
 |---|---|---|
 | `docs/01-objective-roadmap.md` | Why this exists, phases + dates, acceptance criteria, what's parked | First, always |
 | `docs/02-backend-design.md` | Schema, agent loop, tool contract, data flow, seed data spec | Before any backend code |
-| `docs/03-frontend-design.md` | The one status page: layout, tokens, endpoint | Only at P3 (Jul 27+) |
+| `docs/03-frontend-design.md` | The one status page: layout, tokens, endpoint | Only at P3 (Aug 13–14) |
 | `docs/04-tech-stack.md` | Every pick, why, rejected alternatives, what to verify | Before adding any dependency |
 | `docs/05-code-patterns.md` | Module rules, error handling, testing, commit cadence | Before first commit |
 | `docs/06-claude-code-harness.md` | How to work: session loop, doc policy, ODD, subagents | Every session, before coding |
 | `docs/07-branching-worktrees.md` | Branch roles, merge flow, worktree layout + helper | Before creating any branch or worktree |
+| `docs/08-final-sprint.md` | The live schedule (Aug 2→18), closed decisions D1–D4, video shot list | Every session until submission — **supersedes `01`'s dates** |
 
 Top-level folder indexes (read the folder's `index.md` before working in it): `.claude/` (the executable harness — skills, hooks, worker contract) · `docs/` · `infra/` · `lambda/` · `prompts/` · `scripts/` · `status_page/` · `tests/`.
 
@@ -29,15 +30,16 @@ Top-level folder indexes (read the folder's `index.md` before working in it): `.
 3. **Blameless writes.** Every resolution is scrubbed of names/handles/emails before persisting. A test asserts no survivors.
 4. **Confidence honesty.** When retrieval confidence is `none`, the agent says so plainly. It never invents an incident ID (AC3/AC13) — zero fabricated citations across the test set.
 5. **Parked stays parked**: region-kill, live Slack ingest, contradiction engine, Agent Skills diagnostics. Do not build these, even if they'd be quick.
-6. **Sleep-cycle is gated.** Build only if the Jul 26 checkpoint passed on schedule, and only reading via `AS OF SYSTEM TIME` — otherwise it doesn't count as the differentiator it exists to be.
-7. **Behind schedule cuts scope, never the date.** Cut order: UI polish → seed volume → tool breadth. Never cut: chaos demo, write-back, video, Aug 15 submit.
+6. **Sleep-cycle is dead.** Its Jul 26 gate did not pass on schedule, so it is off the table by its own rule (`docs/08`). Do not revisit before submission.
+7. **Behind schedule cuts scope, never the date.** Cut order: UI polish → seed volume → tool breadth. Never cut: chaos demo, write-back, video, on-time submit. Target submit **Aug 17 night ICT**; hard wall **Aug 19, 04:00 ICT** (= Aug 18, 5 pm EDT) — `docs/08`.
 8. **Index or it doesn't exist.** Every new folder or subsystem ships an `index.md` (template in `docs/06`) and registers in its parent index — and in this read-order table if it's top-level — in the same commit. Navigate by index; never bulk-load the repo to orient.
 
 ## Current state
 
-- Phase: **P0** — the probe (cluster + DDL + one vector query + headless-MCP check + Bedrock access request) gates everything. `make probe` + `scripts/probe_bedrock.py` are ready for it.
+- Phase: **P0** — the probe (cluster + DDL + one vector query + headless-MCP check + Bedrock access request) gates everything. `make probe` + `scripts/probe_bedrock.py` are ready for it. **Schedule is now `docs/08`: 16 days to the wall; weekends Aug 8–9 and Aug 15–16 carry the load.**
 - Repo scaffolded Jul 8 from the handoff pack: layout per `docs/05`, branch/worktree model live in `docs/07` (run `make branches-init` once after the setup PR merges), CI fast suite on PRs, structural tests green (AC4 manifest, module boundaries, retry pattern).
-- Open decision markers: search for `DECISION PENDING PROBE` across docs — two exist (runtime DB path, embedding dimension). Resolve them in-file the day the probe answers them.
+- P1 partially pre-banked (Aug 1): the Orbital corpus, the blameless scrubber, and the 20 AC2 eval pairs already exist — `docs/08`'s "implement `generate.py` (~3 h)" line item is done.
+- Open decision markers: **D2 (runtime DB path) is closed — Branch B, psycopg hot path with MCP as the dev/ops surface (`docs/08`).** One marker remains: embedding dimension, expected `1024`, resolved in-file the day `probe_bedrock.py` prints it.
 - Source artifacts (charter HTML v1, council report, pitch panel, original design doc) belong in `docs/plans/` — the human drops them in; this pack is the operational consolidation of all four as of Jul 8; where they disagree, this pack wins.
 
 ## Commands

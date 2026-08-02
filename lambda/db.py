@@ -1,7 +1,7 @@
 """The ONLY module that owns connections. Nothing else calls psycopg.connect.
 
 CockroachDB speaks the Postgres wire protocol; runtime path is psycopg 3 per
-docs/02 Branch B (DECISION PENDING PROBE — flip here if Branch A wins).
+docs/02 Branch B — decision D2, closed 2026-08-02, no flip before submission.
 """
 
 import random
