@@ -37,5 +37,5 @@ deploy: ## zip lambda/ + update the function (P2 wires dependency bundling)
 	cd lambda && zip -qr ../build/lambda.zip . -x '__pycache__/*'
 	aws lambda update-function-code --function-name $(FUNCTION_NAME) --zip-file fileb://build/lambda.zip
 
-branches-init: ## one-time: create + push dev and test from origin/main (docs/07)
+branches-init: ## one-time: create + push develop from origin/main (docs/07)
 	bash scripts/branches_init.sh
