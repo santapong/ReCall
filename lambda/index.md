@@ -7,6 +7,7 @@ The one deployed unit: `ingest_handler` plus the agent loop and its 4-tool memor
 | `agent.py` | Bedrock Converse loop; ZERO SQL here | P2 |
 | `tools.py` | The 4-tool contract + all DB writes | Before touching memory behavior |
 | `db.py` | Connections + the retry wrapper — sole psycopg owner | When adding a query |
+| `embed.py` | Text → unit-norm vector; sole Bedrock-embedding surface (D1) | When anything needs a vector |
 | `scrub.py` | Blameless-write scrubber (hard rule 3) | P1 |
 
 ## Invariants (tested in tests/test_module_boundaries.py, test_manifest.py)

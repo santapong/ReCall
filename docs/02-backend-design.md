@@ -97,6 +97,11 @@ search_incidents(query: str, service: str, k: int = 5) -> SearchResult
     confidence: 'high' | 'low' | 'none' from fixed distance thresholds,
     tuned empirically against the seeded corpus in P1 (AC13).
 
+    SearchResult also carries runbook_ids for the searched service (added
+    2026-08-02): without it the agent has no legal way to learn a runbook id,
+    and AC3 requires citing a runbook step. This is a field on a return model,
+    not a fifth tool — the manifest stays closed at 4.
+
 get_runbook(runbook_id: str) -> Runbook
     Read-only fetch by ID. No search.
 

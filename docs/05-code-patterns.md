@@ -18,6 +18,7 @@ recall/
 │   ├── agent.py              # Bedrock Converse loop; ZERO SQL in this file
 │   ├── tools.py              # the ONLY module that writes to the DB
 │   ├── db.py                 # the ONLY module that owns connections
+│   ├── embed.py              # the ONLY module that calls Bedrock for embeddings
 │   └── scrub.py              # blameless-write scrubber
 ├── prompts/
 │   └── system.md             # agent system prompt, versioned like code
@@ -32,6 +33,7 @@ recall/
 - `agent.py` contains no SQL and no psycopg import. It sees four Python functions and nothing else.
 - `tools.py` is the sole DB-write surface. A test greps the codebase: `INSERT|UPDATE|DELETE` appear only in `tools.py` and `infra/`.
 - `db.py` owns the connection/pool and the retry wrapper. Nothing else calls `psycopg.connect`.
+- `embed.py` owns the Bedrock embedding call and the `EMBED_DIM` constant. Nothing else embeds — the seed loader and `tools.py` share one surface, so the corpus and the queries can never be normalized differently.
 - `prompts/system.md` is loaded at runtime, never inlined — prompt changes must be diffable.
 
 ## SQL
@@ -48,6 +50,7 @@ One retry wrapper, used everywhere it applies:
 
 ```python
 RETRYABLE = ("40001",)  # CRDB serialization conflict — expected under serializable isolation
+RECONNECTABLE = (psycopg.OperationalError, psycopg.InterfaceError)  # AC7: a node died
 
 def with_retry(fn, *, max_attempts=3, base_delay=0.2):
     for attempt in range(1, max_attempts + 1):
@@ -57,9 +60,16 @@ def with_retry(fn, *, max_attempts=3, base_delay=0.2):
             if attempt == max_attempts:
                 raise
             time.sleep(base_delay * 2 ** (attempt - 1) + random.uniform(0, 0.1))
+        except RECONNECTABLE:
+            close_conn()  # drop the dead socket; the next attempt lands on a live node
+            if attempt == max_attempts:
+                raise
+            time.sleep(base_delay * 2 ** (attempt - 1) + random.uniform(0, 0.1))
 ```
 
-Same shape for Bedrock `ThrottlingException`. Rules: retries are silent, failures are loud, and nothing ever degrades quietly — a failed embedding fails the ingest; it never falls back to keyword search (that would silently poison AC2).
+**Amended 2026-08-02**: the original snippet retried serialization failures only. A killed node surfaces as `OperationalError`, not `SerializationFailure`, so AC7's "in-flight answer completes" would have failed on the one demo that is never cut. The reconnect arm is why the node-kill take works.
+
+Same shape for Bedrock `ThrottlingException` (`embed.with_throttle_retry`, matching on error code). Rules: retries are silent, failures are loud, and nothing ever degrades quietly — a failed embedding fails the ingest; it never falls back to keyword search (that would silently poison AC2).
 
 ## The scrub pattern (AC hard rule 3)
 
