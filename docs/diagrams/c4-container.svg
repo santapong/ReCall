@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 700" width="1180" height="700" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif">
+  <title id="t">Recall — C4 Level 2, Containers</title>
+  <desc id="d">Recall is three deployable pieces: one AWS Lambda, one CockroachDB cluster, and one static status page.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#97948a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="700" fill="#12130f"/>
+  <text x="40" y="50" fill="#e9e7dd" font-size="22" font-weight="bold">Recall — Containers</text>
+  <text x="40" y="74" fill="#97948a" font-size="13">C4 Level 2 · three deployable pieces, deliberately not decomposed further</text>
+
+  <!-- System boundary -->
+  <rect x="270" y="180" width="680" height="480" rx="14" fill="none" stroke="#e6a53f" stroke-width="1.6" stroke-dasharray="8 6" opacity="0.75"/>
+  <text x="286" y="204" fill="#e6a53f" font-size="12.5">Recall [system boundary]</text>
+
+  <!-- Alerting (external, top) -->
+  <g>
+    <rect x="660" y="70" width="250" height="90" rx="10" fill="#1a1b16" stroke="#2c2d26" stroke-width="1.5"/>
+    <text x="785" y="105" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">Alerting / monitoring</text>
+    <text x="785" y="126" fill="#97948a" font-size="12" text-anchor="middle">[External system]</text>
+    <text x="785" y="147" fill="#97948a" font-size="12.5" text-anchor="middle">Fires the alert.</text>
+  </g>
+
+  <!-- Person (external, left) -->
+  <g>
+    <rect x="40" y="290" width="170" height="110" rx="10" fill="#1a1b16" stroke="#5fb8a0" stroke-width="2"/>
+    <text x="125" y="327" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">On-call engineer</text>
+    <text x="125" y="348" fill="#97948a" font-size="12" text-anchor="middle">[Person]</text>
+    <text x="125" y="372" fill="#97948a" font-size="12.5" text-anchor="middle">Reads, then</text>
+    <text x="125" y="389" fill="#97948a" font-size="12.5" text-anchor="middle">closes the incident.</text>
+  </g>
+
+  <!-- Status page -->
+  <g>
+    <rect x="290" y="230" width="250" height="170" rx="10" fill="#1a1b16" stroke="#5fb8a0" stroke-width="2"/>
+    <text x="415" y="268" fill="#e9e7dd" font-size="17" font-weight="bold" text-anchor="middle">Status page</text>
+    <text x="415" y="289" fill="#97948a" font-size="12" text-anchor="middle">[Static HTML · vanilla JS]</text>
+    <text x="415" y="315" fill="#97948a" font-size="12.5" text-anchor="middle">One page, read-only, no build</text>
+    <text x="415" y="333" fill="#97948a" font-size="12.5" text-anchor="middle">step. Polls every 3 s.</text>
+    <text x="415" y="359" fill="#5fb8a0" font-size="12.5" text-anchor="middle">The elapsed-incident clock</text>
+    <text x="415" y="376" fill="#5fb8a0" font-size="12.5" text-anchor="middle">never stops on camera.</text>
+  </g>
+
+  <!-- Lambda -->
+  <g>
+    <rect x="660" y="230" width="250" height="170" rx="10" fill="#1a1b16" stroke="#e6a53f" stroke-width="2.5"/>
+    <text x="785" y="268" fill="#e9e7dd" font-size="17" font-weight="bold" text-anchor="middle">ingest + agent</text>
+    <text x="785" y="289" fill="#97948a" font-size="12" text-anchor="middle">[AWS Lambda · Python 3.12]</text>
+    <text x="785" y="315" fill="#97948a" font-size="12.5" text-anchor="middle">Idempotent ingest, the Converse</text>
+    <text x="785" y="333" fill="#97948a" font-size="12.5" text-anchor="middle">loop, and the 4-tool memory</text>
+    <text x="785" y="351" fill="#97948a" font-size="12.5" text-anchor="middle">surface — one zip, one URL.</text>
+    <text x="785" y="377" fill="#e6a53f" font-size="12.5" text-anchor="middle">Every moving part is one that</text>
+    <text x="785" y="394" fill="#e6a53f" font-size="12.5" text-anchor="middle">can fail on demo day.</text>
+  </g>
+
+  <!-- CockroachDB -->
+  <g>
+    <rect x="440" y="500" width="320" height="150" rx="10" fill="#1a1b16" stroke="#5fb8a0" stroke-width="2.5"/>
+    <text x="600" y="538" fill="#e9e7dd" font-size="17" font-weight="bold" text-anchor="middle">CockroachDB</text>
+    <text x="600" y="559" fill="#97948a" font-size="12" text-anchor="middle">[Distributed SQL · vector index]</text>
+    <text x="600" y="581" fill="#97948a" font-size="12.5" text-anchor="middle">incidents · episodic memory</text>
+    <text x="600" y="599" fill="#97948a" font-size="12.5" text-anchor="middle">runbooks · semantic memory</text>
+    <text x="600" y="617" fill="#97948a" font-size="12.5" text-anchor="middle">working_state · active memory</text>
+    <text x="600" y="636" fill="#5fb8a0" font-size="12.5" text-anchor="middle">Survives the node kill.</text>
+  </g>
+
+  <!-- Bedrock (external, right) -->
+  <g>
+    <rect x="990" y="270" width="170" height="110" rx="10" fill="#1a1b16" stroke="#2c2d26" stroke-width="1.5"/>
+    <text x="1075" y="307" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">AWS Bedrock</text>
+    <text x="1075" y="328" fill="#97948a" font-size="12" text-anchor="middle">[External]</text>
+    <text x="1075" y="352" fill="#97948a" font-size="12.5" text-anchor="middle">Claude +</text>
+    <text x="1075" y="369" fill="#97948a" font-size="12.5" text-anchor="middle">Titan V2.</text>
+  </g>
+
+  <!-- Edges -->
+  <path d="M 785 162 L 785 222" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="797" y="197" fill="#e9e7dd" font-size="12">POSTs alert JSON</text>
+
+  <path d="M 214 330 L 282 330" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="242" y="320" fill="#e9e7dd" font-size="12" text-anchor="middle">watches</text>
+
+  <path d="M 918 315 L 982 315" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="1075" y="258" fill="#e9e7dd" font-size="12" text-anchor="middle">Converse + embed</text>
+
+  <!-- Lambda -> CockroachDB (elbow) -->
+  <path d="M 785 408 L 785 450 L 690 450 L 690 492" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="938" y="443" fill="#e9e7dd" font-size="12" text-anchor="end">parameterized SQL · psycopg 3</text>
+
+  <!-- Status page -> CockroachDB (elbow) -->
+  <path d="M 415 408 L 415 470 L 510 470 L 510 492" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="300" y="464" fill="#e9e7dd" font-size="12">polls working_state</text>
+</svg>

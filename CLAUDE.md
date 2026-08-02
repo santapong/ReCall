@@ -32,7 +32,7 @@ Top-level folder indexes (read the folder's `index.md` before working in it): `.
 5. **Parked stays parked**: region-kill, live Slack ingest, contradiction engine, Agent Skills diagnostics. Do not build these, even if they'd be quick.
 6. **Sleep-cycle is dead.** Its Jul 26 gate did not pass on schedule, so it is off the table by its own rule (`docs/08`). Do not revisit before submission.
 7. **Behind schedule cuts scope, never the date.** Cut order: UI polish → seed volume → tool breadth. Never cut: chaos demo, write-back, video, on-time submit. Target submit **Aug 17 night ICT**; hard wall **Aug 19, 04:00 ICT** (= Aug 18, 5 pm EDT) — `docs/08`.
-8. **Index or it doesn't exist.** Every new folder or subsystem ships an `index.md` (template in `docs/06`) and registers in its parent index — and in this read-order table if it's top-level — in the same commit. Navigate by index; never bulk-load the repo to orient.
+8. **Index or it doesn't exist.** Every new folder or subsystem ships an `index.md` (template in `docs/06`) and registers in its parent index — and in this read-order table if it's top-level — in the same commit. Navigate by index; never bulk-load the repo to orient. *Amended 2026-08-02*: **asset-only folders** (`docs/diagrams/` — SVG and nothing else) carry no `index.md`; the parent index describes every file instead. The rule's purpose is that nothing is undiscoverable, and a one-format asset folder is better served by one table upstream than by a stub file inside it.
 
 ## Current state
 
@@ -61,4 +61,4 @@ Harness skills (docs/06–07 as machinery, see `.claude/index.md`): `/session-lo
 
 ## Definition of done
 
-AC1–AC13 in `docs/01-objective-roadmap.md`. Every PR/commit message names the AC it advances. Submission is done when the Devpost confirmation email exists — not when the code is done.
+AC1–AC13 in `docs/01-objective-roadmap.md`. Every PR/commit message names the AC it advances, and every change a reader would notice gets a `CHANGELOG.md` entry in the same commit — the changelog is the outward-facing history, `WORKLOG.md` is the session log; they are not the same file and neither replaces the other. Submission is done when the Devpost confirmation email exists — not when the code is done.

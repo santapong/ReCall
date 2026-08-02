@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="1200" height="780" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif">
+  <title id="t">Recall — C4 Level 3, Components inside the Lambda</title>
+  <desc id="d">The modules inside the deployed zip and the boundaries the test suite enforces between them.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#97948a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="780" fill="#12130f"/>
+  <text x="40" y="50" fill="#e9e7dd" font-size="22" font-weight="bold">Recall — Components</text>
+  <text x="40" y="74" fill="#97948a" font-size="13">C4 Level 3 · inside the deployed zip. Every boundary below is asserted by tests/, not by review.</text>
+
+  <!-- Deployment-unit boundary -->
+  <rect x="60" y="110" width="880" height="620" rx="14" fill="none" stroke="#e6a53f" stroke-width="1.6" stroke-dasharray="8 6" opacity="0.75"/>
+  <text x="76" y="134" fill="#e6a53f" font-size="12.5">lambda/ [one zip, flat imports]</text>
+
+  <!-- ingest_handler -->
+  <g>
+    <rect x="100" y="165" width="230" height="105" rx="10" fill="#1a1b16" stroke="#2c2d26" stroke-width="1.5"/>
+    <text x="215" y="197" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">ingest_handler.py</text>
+    <text x="215" y="217" fill="#97948a" font-size="12" text-anchor="middle">[entrypoint · Function URL]</text>
+    <text x="215" y="240" fill="#97948a" font-size="12.5" text-anchor="middle">Parse, dedupe on external_id,</text>
+    <text x="215" y="257" fill="#97948a" font-size="12.5" text-anchor="middle">invoke. Thin by contract.</text>
+  </g>
+
+  <!-- agent.py -->
+  <g>
+    <rect x="100" y="330" width="230" height="160" rx="10" fill="#1a1b16" stroke="#e6a53f" stroke-width="2.5"/>
+    <text x="215" y="363" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">agent.py</text>
+    <text x="215" y="383" fill="#97948a" font-size="12" text-anchor="middle">[Bedrock Converse loop]</text>
+    <text x="215" y="407" fill="#97948a" font-size="12.5" text-anchor="middle">~50 lines. Dispatches over</text>
+    <text x="215" y="424" fill="#97948a" font-size="12.5" text-anchor="middle">TOOL_MANIFEST.</text>
+    <text x="215" y="450" fill="#e6a53f" font-size="12.5" text-anchor="middle">Zero SQL. Zero psycopg.</text>
+    <text x="215" y="467" fill="#e6a53f" font-size="12.5" text-anchor="middle">It sees four functions</text>
+    <text x="215" y="484" fill="#e6a53f" font-size="12.5" text-anchor="middle">and nothing else.</text>
+  </g>
+
+  <!-- prompts/system.md -->
+  <g>
+    <rect x="100" y="560" width="230" height="110" rx="10" fill="#1a1b16" stroke="#2c2d26" stroke-width="1.5"/>
+    <text x="215" y="592" fill="#e9e7dd" font-size="15" font-weight="bold" text-anchor="middle">prompts/system.md</text>
+    <text x="215" y="612" fill="#97948a" font-size="12" text-anchor="middle">[versioned like code]</text>
+    <text x="215" y="635" fill="#97948a" font-size="12.5" text-anchor="middle">Loaded at runtime, never</text>
+    <text x="215" y="652" fill="#97948a" font-size="12.5" text-anchor="middle">inlined — prompts must diff.</text>
+  </g>
+
+  <!-- embed.py -->
+  <g>
+    <rect x="420" y="165" width="280" height="105" rx="10" fill="#1a1b16" stroke="#2c2d26" stroke-width="1.5"/>
+    <text x="560" y="197" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">embed.py</text>
+    <text x="560" y="217" fill="#97948a" font-size="12" text-anchor="middle">[sole embedding surface]</text>
+    <text x="560" y="240" fill="#97948a" font-size="12.5" text-anchor="middle">Titan V2, 1024-d, normalize=true</text>
+    <text x="560" y="257" fill="#97948a" font-size="12.5" text-anchor="middle">on every call — corpus and query alike.</text>
+  </g>
+
+  <!-- tools.py -->
+  <g>
+    <rect x="420" y="330" width="280" height="160" rx="10" fill="#1a1b16" stroke="#e6a53f" stroke-width="2.5"/>
+    <text x="560" y="363" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">tools.py</text>
+    <text x="560" y="383" fill="#97948a" font-size="12" text-anchor="middle">[the closed 4-tool manifest]</text>
+    <text x="560" y="407" fill="#97948a" font-size="12.5" text-anchor="middle">search_incidents · get_runbook</text>
+    <text x="560" y="424" fill="#97948a" font-size="12.5" text-anchor="middle">propose_diagnosis · write_incident</text>
+    <text x="560" y="450" fill="#e6a53f" font-size="12.5" text-anchor="middle">The only module that writes.</text>
+    <text x="560" y="467" fill="#e6a53f" font-size="12.5" text-anchor="middle">Closed at four — the suite</text>
+    <text x="560" y="484" fill="#e6a53f" font-size="12.5" text-anchor="middle">fails at five.</text>
+  </g>
+
+  <!-- scrub.py -->
+  <g>
+    <rect x="420" y="560" width="280" height="110" rx="10" fill="#1a1b16" stroke="#2c2d26" stroke-width="1.5"/>
+    <text x="560" y="592" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">scrub.py</text>
+    <text x="560" y="612" fill="#97948a" font-size="12" text-anchor="middle">[blameless writes]</text>
+    <text x="560" y="635" fill="#97948a" font-size="12.5" text-anchor="middle">Names, @handles and emails</text>
+    <text x="560" y="652" fill="#97948a" font-size="12.5" text-anchor="middle">never reach the database.</text>
+  </g>
+
+  <!-- db.py -->
+  <g>
+    <rect x="750" y="330" width="170" height="160" rx="10" fill="#1a1b16" stroke="#5fb8a0" stroke-width="2"/>
+    <text x="835" y="366" fill="#e9e7dd" font-size="16" font-weight="bold" text-anchor="middle">db.py</text>
+    <text x="835" y="386" fill="#97948a" font-size="12" text-anchor="middle">[connections]</text>
+    <text x="835" y="410" fill="#97948a" font-size="12.5" text-anchor="middle">Sole psycopg</text>
+    <text x="835" y="427" fill="#97948a" font-size="12.5" text-anchor="middle">owner.</text>
+    <text x="835" y="453" fill="#5fb8a0" font-size="12.5" text-anchor="middle">Retry +</text>
+    <text x="835" y="470" fill="#5fb8a0" font-size="12.5" text-anchor="middle">reconnect (AC7).</text>
+  </g>
+
+  <!-- Externals -->
+  <g>
+    <rect x="1000" y="165" width="170" height="105" rx="10" fill="#1a1b16" stroke="#2c2d26" stroke-width="1.5"/>
+    <text x="1085" y="203" fill="#e9e7dd" font-size="15" font-weight="bold" text-anchor="middle">AWS Bedrock</text>
+    <text x="1085" y="223" fill="#97948a" font-size="12" text-anchor="middle">[External]</text>
+    <text x="1085" y="246" fill="#97948a" font-size="12.5" text-anchor="middle">Claude + Titan V2.</text>
+  </g>
+  <g>
+    <rect x="1000" y="350" width="170" height="120" rx="10" fill="#1a1b16" stroke="#5fb8a0" stroke-width="2"/>
+    <text x="1085" y="388" fill="#e9e7dd" font-size="15" font-weight="bold" text-anchor="middle">CockroachDB</text>
+    <text x="1085" y="408" fill="#97948a" font-size="12" text-anchor="middle">[External]</text>
+    <text x="1085" y="431" fill="#97948a" font-size="12.5" text-anchor="middle">Three memory</text>
+    <text x="1085" y="448" fill="#97948a" font-size="12.5" text-anchor="middle">layers, one cluster.</text>
+  </g>
+
+  <!-- Edges -->
+  <path d="M 215 278 L 215 322" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="227" y="305" fill="#e9e7dd" font-size="12">invokes</text>
+
+  <path d="M 338 410 L 412 410" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="375" y="399" fill="#e9e7dd" font-size="12" text-anchor="middle">calls</text>
+
+  <path d="M 708 410 L 742 410" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <path d="M 928 410 L 992 410" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="960" y="399" fill="#e9e7dd" font-size="12" text-anchor="middle">SQL</text>
+
+  <path d="M 560 322 L 560 278" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="572" y="305" fill="#e9e7dd" font-size="12">embed()</text>
+
+  <path d="M 708 217 L 992 217" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="850" y="206" fill="#e9e7dd" font-size="12" text-anchor="middle">InvokeModel</text>
+
+  <path d="M 560 498 L 560 552" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="572" y="530" fill="#e9e7dd" font-size="12">scrub before write</text>
+
+  <path d="M 215 498 L 215 552" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="227" y="530" fill="#e9e7dd" font-size="12">loads</text>
+
+  <path d="M 338 355 L 380 355 L 380 98 L 1085 98 L 1085 157" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="720" y="90" fill="#e9e7dd" font-size="12" text-anchor="middle">Converse API — the only place the model is called</text>
+</svg>
