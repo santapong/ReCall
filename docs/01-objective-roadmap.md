@@ -26,6 +26,8 @@ Tribal on-call knowledge lives in senior engineers' heads and rots in unread pos
 
 ## Phases — gate-exited, dates fixed
 
+> **Superseded 2026-08-02:** the dates in this table are the original plan and did not hold — P0 never ran and the repo sat frozen from Jul 8. The live schedule is **`docs/08-final-sprint.md`** (Aug 2 → 18). Every AC, budget, exit criterion, and hour figure below still stands; only the calendar moved. The stretch goal is dead by its own Jul 26 gate.
+
 | Dates | Phase | Exit criterion | Hours |
 |---|---|---|---|
 | → Jul 8 | **P0 · Probe** | MCP config working in Claude Code; DDL + 5 rows + one `<->` query succeed on a live cluster; headless-MCP auth answered; Bedrock model access requested | 1 |

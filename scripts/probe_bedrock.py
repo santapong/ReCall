@@ -1,7 +1,8 @@
 """P0/P1 probe: confirm Bedrock embedding access and print the output dimension.
 
 The dimension resolves the `VECTOR(1024)` DECISION PENDING PROBE marker in
-docs/02 and infra/schema.sql — update both the day this runs.
+docs/02 and infra/schema.sql — update both the day this runs. Expected 1024 per
+decision D1 (docs/08); this script exists to prove it rather than assume it.
 
 Run:  uv run python scripts/probe_bedrock.py [model_id]
 Env:  AWS_REGION (and AWS credentials), optional BEDROCK_EMBED_MODEL_ID.
@@ -30,10 +31,19 @@ def main() -> int:
     client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION"))
     resp = client.invoke_model(
         modelId=model_id,
-        body=json.dumps({"inputText": "payment webhooks timing out"}),
+        # normalize=true is not cosmetic (decision D1): unit vectors make L2 (`<->`)
+        # and cosine rank identically, so every `<->` query in tools.py is metric-safe.
+        body=json.dumps(
+            {
+                "inputText": "payment webhooks timing out",
+                "dimensions": 1024,
+                "normalize": True,
+            }
+        ),
     )
     embedding = json.loads(resp["body"].read())["embedding"]
-    print(f"model {model_id} -> dimension {len(embedding)}")
+    norm = sum(x * x for x in embedding) ** 0.5
+    print(f"model {model_id} -> dimension {len(embedding)} · L2 norm {norm:.4f} (expect ~1.0)")
     print(
         "now: set VECTOR(n) in infra/schema.sql + infra/migrations/0001_init.sql, "
         "resolve the marker in docs/02, and record the model id in the README."

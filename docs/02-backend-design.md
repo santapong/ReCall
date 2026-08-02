@@ -17,14 +17,16 @@ flowchart TD
     Page -.->|"close incident"| Tools
 ```
 
-## Runtime DB path — DECISION PENDING PROBE
+## Runtime DB path — RESOLVED 2026-08-02 · Branch B (decision D2, `docs/08`)
 
-Two branches, pick recorded here the day the probe answers:
+Both branches are viable; the headless-auth question was answered from documentation rather than by the probe. **Branch B is chosen anyway.**
 
-- **Branch A (design as originally written)**: agent tools execute through the managed MCP server's SQL tool. Valid only if a *headless* client can authenticate to the managed endpoint — the official quickstart targets IDE agents (Claude Code / Cursor / VS Code), so this is unverified.
-- **Branch B (fallback, likely)**: runtime hot path = plain Postgres wire protocol via `psycopg`, connection string from Cloud Console. MCP server remains the *development and operations* surface — Claude Code drives schema, seeds, and inspection through it, shown on camera. Cleaner node-kill story: "the database survived," no middle service in frame.
+- **Branch A (design as originally written)**: agent tools execute through the managed MCP server's SQL tool. *Verified viable* — the official CockroachDB Claude plugin documents service-account API keys as a Bearer header, explicitly for fully autonomous environments. Not chosen.
+- **Branch B — CHOSEN**: runtime hot path = plain Postgres wire protocol via `psycopg` 3, parameterized SQL only, connection string from Cloud Console. The MCP server stays the *development and operations* surface — Claude Code drives schema, seed inspection, and `AS OF SYSTEM TIME` queries through it, on camera — and counts as CockroachDB tool #1 for compliance.
 
-Compliance holds either way (vector index + MCP + ccloud all count). Everything below is branch-agnostic.
+Why B when A works: (a) **AC4 auditability** — the 4-tool manifest maps to 4 SQL statements we own and can show; (b) **no middle service in the node-kill frame** — "the database survived" stays a one-hop claim; (c) production precedent — Zep (arXiv 2501.13956) reports choosing predefined queries over LLM-generated ones for exactly this schema-consistency and hallucination-reduction reason.
+
+**Flip condition: none before submission.** Compliance holds either way (vector index + MCP + ccloud all count). Everything below is branch-agnostic.
 
 ## Schema — three memory layers
 
