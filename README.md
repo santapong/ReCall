@@ -78,6 +78,16 @@ This is the part that is hard to retrofit. Adding memory to an agent is a weeken
 answers structurally refuse to exceed their evidence is the thing that decides whether an on-call
 engineer trusts it at 2 a.m.
 
+### Access control — the database enforces it too
+
+The same posture holds one layer down. The Lambda connects as a dedicated `recall_app` role
+([`infra/migrations/0003_app_role.sql`](infra/migrations/0003_app_role.sql)) that can read memory,
+write incidents and working state, and append to the decision log — and nothing else: **no DELETE
+on any table, no DDL, and no write access to `runbooks`** (semantic memory changes only through the
+seed/ops path, never through the agent's runtime). So even if every application-level guard failed
+at once, the blast radius of a compromised agent session is bounded by the database's own grants —
+it could not drop a table, erase history, or rewrite a runbook.
+
 ## Who it's for
 
 - **On-call engineers** — the diagnosis reaches them seconds after the page, grounded in what

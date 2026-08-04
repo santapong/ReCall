@@ -10,6 +10,16 @@ below are those criteria, defined in [`docs/01-objective-roadmap.md`](docs/01-ob
 
 ## [Unreleased]
 
+### 2026-08-04 — least-privilege runtime role (review follow-up)
+
+#### Added
+- **`infra/migrations/0003_app_role.sql`** — the `recall_app` role the Lambda connects as:
+  read memory, write incidents/working state, append to the decision log; **no DELETE anywhere,
+  no DDL, no write access to `runbooks`**. Verified live with `SHOW GRANTS`. Closes the review's
+  open access-control item: the blast radius of a compromised agent session is now bounded by the
+  database's own grants, and the README's "Access control" section points at the artifact rather
+  than making a claim.
+
 ### 2026-08-04 (later) — the benchmark told the truth for the first time; observability landed
 
 A review pass against the judging rubric found one thing that had to be fixed before anything
