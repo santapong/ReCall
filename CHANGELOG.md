@@ -10,6 +10,18 @@ below are those criteria, defined in [`docs/01-objective-roadmap.md`](docs/01-ob
 
 ## [Unreleased]
 
+### 2026-08-04 — CI runs the DB-backed suite; migrations idempotent
+
+#### Added
+- **CI `full` job**: on pushes to `develop` and `release/**`, spins a real single-node
+  CockroachDB v25.2.2 (same version as the dev node and chaos rig), sets the vector-index flag,
+  migrates, and runs all 58 tests — the DB-backed half can no longer rot silently. The fast suite
+  is unchanged on PRs. Fulfils the promise the workflow file has carried since Jul 8.
+
+#### Changed
+- All migrations and `schema.sql` are now idempotent (`IF NOT EXISTS` on tables, indexes, role) —
+  `make migrate` re-runs cleanly, which is what lets CI and a developer share one entry point.
+
 ### 2026-08-04 — least-privilege runtime role (review follow-up)
 
 #### Added
