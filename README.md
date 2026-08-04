@@ -30,10 +30,10 @@
 
 > **Status — Aug 4.** All application code is built and tested: the 4-tool memory surface
 > (read *and* write sides), the Bedrock Converse loop, ingest + status + runlog endpoints, the
-> status page, the seed loader, the AC2 eval harness, the `agent_runs` decision log, and a
-> rehearsed 3-node kill rig. What has not yet happened is the first *live* run — cloud credentials
-> (CockroachDB Cloud + Bedrock) are the remaining gate. 58 tests green, DB-backed ones running
-> against a real local CockroachDB. Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
+> status page, the seed loader, the AC2 eval harness, the `agent_runs` decision log, a corpus of
+> 10 real public postmortems, and a rehearsed 3-node kill rig. What has not yet happened is the
+> first *live* run — cloud credentials (CockroachDB Cloud + Bedrock) are the remaining gate.
+> 62 tests green, the DB-backed ones running in CI against a real single-node CockroachDB. Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## The problem
 
@@ -254,7 +254,7 @@ With any CockroachDB — Cloud free tier or a local single-node
 ```bash
 make probe                   # DDL + 5 rows + one `<->` vector query, then cleans up
 make migrate                 # apply infra/migrations/*.sql in order (0001 schema, 0002 decision log)
-uv run pytest                # now 58/58 — the DB-backed tests run for real
+uv run pytest                # now 62/62 — the DB-backed tests run for real
 ```
 
 The AC7 resilience rig (needs Docker):

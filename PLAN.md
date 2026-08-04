@@ -10,9 +10,13 @@ design of record.*
 
 ## Where this actually stands
 
-**Built and green:** 47 fast tests, 11 DB-backed skipping without a cluster. The 4-tool
-manifest, the Converse loop, ingest + `/status` + `/health` + `/runlog`, the status page,
-the seed loader, the AC2 harness, the `agent_runs` decision log, the 3-node chaos rig.
+**Built and green:** 62 tests (43 fast + 19 DB-backed, the latter running locally and in CI
+against a real single-node cockroach). The 4-tool manifest, the Converse loop, ingest +
+`/status` + `/health` + `/runlog`, the status page, the seed loader, the AC2 harness, the
+`agent_runs` decision log, the 3-node chaos rig — plus, executed after this plan was written:
+the `recall_app` least-privilege role (review's access-control item), the CI full-suite job,
+idempotent migrations, and the real-PIR corpus's credential-free half (10 sourced public
+postmortems in `infra/seed/pir_corpus.json`; only its embedding pass still waits on M1).
 
 **Not started:** every line of the live half. No Cloud cluster, no Bedrock access, zero
 embeddings written, `CONFIDENCE_HIGH_MAX_DIST` and `CONFIDENCE_NONE_MIN_DIST` still `NaN`.
