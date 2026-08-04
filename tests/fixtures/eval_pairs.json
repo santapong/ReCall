@@ -3,7 +3,7 @@
     "alert": {
       "external_id": "ALERT-2000",
       "service": "api-gateway",
-      "title": "Gateway 5xx spike \u2014 upstream timeouts to ledger",
+      "title": "SLO breach \u2014 edge availability below target in eu-west-1",
       "description": "edge error rate around 24% in eu-west-1; calls to ledger hang past 2500 ms then fail, retry traffic is stacking up.",
       "severity": "SEV-2"
     },
@@ -14,7 +14,7 @@
     "alert": {
       "external_id": "ALERT-2001",
       "service": "api-gateway",
-      "title": "Legitimate traffic throttled \u2014 rate limiter misconfigured",
+      "title": "Customer escalation \u2014 valid requests being rejected in ap-southeast-1",
       "description": "large customers report requests rejected with 429 in ap-southeast-1; roughly 89% of valid calls throttled since the last config change.",
       "severity": "SEV-2"
     },
@@ -25,7 +25,7 @@
     "alert": {
       "external_id": "ALERT-2002",
       "service": "api-gateway",
-      "title": "TLS handshake failures at the edge \u2014 certificate expired",
+      "title": "Customer-reported connection errors climbing in ap-southeast-1",
       "description": "customers in ap-southeast-1 see TLS errors; monitoring shows expired leaf certificate on the edge, failure rate near 24%.",
       "severity": "SEV-2"
     },
@@ -36,7 +36,7 @@
     "alert": {
       "external_id": "ALERT-2003",
       "service": "auth",
-      "title": "Token refresh loop \u2014 clients hammering /token",
+      "title": "Auth request volume alarm \u2014 eu-west-1",
       "description": "auth traffic storm in eu-west-1: clients stuck refreshing every 4s because fresh access tokens are rejected, load up 65%.",
       "severity": "SEV-2"
     },
@@ -47,7 +47,7 @@
     "alert": {
       "external_id": "ALERT-2004",
       "service": "auth",
-      "title": "Login latency breach \u2014 password hash cost misconfigured",
+      "title": "Users reporting slow sign-in in ap-southeast-1",
       "description": "sign-in takes seconds for users in ap-southeast-1; auth CPU pegged since the patch, p99 around 1200 ms with flat traffic.",
       "severity": "SEV-2"
     },
@@ -58,7 +58,7 @@
     "alert": {
       "external_id": "ALERT-2005",
       "service": "auth",
-      "title": "Users logged out en masse \u2014 session store eviction",
+      "title": "Support surge \u2014 customers signed out unexpectedly in eu-west-1",
       "description": "support flood: everyone in eu-west-1 logged out around the same time; session count fell 36% as the store evicted under memory pressure.",
       "severity": "SEV-2"
     },
@@ -69,7 +69,7 @@
     "alert": {
       "external_id": "ALERT-2006",
       "service": "billing",
-      "title": "Payment webhooks timing out \u2014 provider retries piling up",
+      "title": "Provider callback processing over budget in ap-southeast-1",
       "description": "payment provider callbacks in ap-southeast-1 exceed 2500 ms and time out; retries queue up past 1300, duplicates appearing.",
       "severity": "SEV-2"
     },
@@ -80,7 +80,7 @@
     "alert": {
       "external_id": "ALERT-2007",
       "service": "billing",
-      "title": "Nightly invoice job stalled \u2014 lock contention",
+      "title": "Nightly billing run has not completed \u2014 eu-west-1",
       "description": "billing run for eu-west-1 frozen around 86% complete for 13 hours; database lock contention between batch and API writes.",
       "severity": "SEV-2"
     },
@@ -91,7 +91,7 @@
     "alert": {
       "external_id": "ALERT-2008",
       "service": "billing",
-      "title": "Card declines spiking \u2014 PSP degradation",
+      "title": "Checkout conversion drop \u2014 charges failing in eu-west-1",
       "description": "checkout failures up in eu-west-1: 69% of charges declined, concentrated on a single network; PSP responding around 250 ms.",
       "severity": "SEV-2"
     },
@@ -102,7 +102,7 @@
     "alert": {
       "external_id": "ALERT-2009",
       "service": "billing",
-      "title": "Duplicate charges reported \u2014 idempotency key regression",
+      "title": "Repeat-charge complaints rising in eu-west-1",
       "description": "customers in eu-west-1 charged twice for one checkout; about 22 cases, second charge lands within 1200 ms; dedupe lookups missing.",
       "severity": "SEV-2"
     },
@@ -113,7 +113,7 @@
     "alert": {
       "external_id": "ALERT-2010",
       "service": "search",
-      "title": "Search results stale \u2014 indexing pipeline lag",
+      "title": "New content not appearing in results \u2014 eu-west-1",
       "description": "fresh content not searchable for ~25 minutes in eu-west-1; ingestion consumers stuck rebalancing, lag far over SLO.",
       "severity": "SEV-2"
     },
@@ -124,7 +124,7 @@
     "alert": {
       "external_id": "ALERT-2011",
       "service": "search",
-      "title": "Query latency uneven \u2014 shard hotspot",
+      "title": "Subset of tenants seeing slow responses in us-east-1",
       "description": "search slow for a subset of tenants in us-east-1, p99 near 1200 ms; a single shard runs hot at 55% CPU.",
       "severity": "SEV-2"
     },
@@ -135,7 +135,7 @@
     "alert": {
       "external_id": "ALERT-2012",
       "service": "search",
-      "title": "Faceted queries slow \u2014 planner regression after upgrade",
+      "title": "Filtered queries slow since last release \u2014 ap-southeast-1",
       "description": "filters with facets crawling in ap-southeast-1 since the upgrade, around 2500 ms p99; execution plans show scans instead of index use.",
       "severity": "SEV-2"
     },
@@ -146,7 +146,7 @@
     "alert": {
       "external_id": "ALERT-2013",
       "service": "notifications",
-      "title": "Email delivery delayed \u2014 queue backlog",
+      "title": "Outbound mail arriving late for us-east-1 customers",
       "description": "emails arriving very late for us-east-1 users; backlog around 28k messages, relay deferring 37% with temporary errors.",
       "severity": "SEV-2"
     },
@@ -157,7 +157,7 @@
     "alert": {
       "external_id": "ALERT-2014",
       "service": "notifications",
-      "title": "iOS pushes failing \u2014 APNs certificate expired",
+      "title": "iOS sends failing while android succeeds \u2014 ap-southeast-1",
       "description": "push notifications dead on iOS for ap-southeast-1, rejection rate 52%; android unaffected; provider cites expired credentials.",
       "severity": "SEV-2"
     },
@@ -168,7 +168,7 @@
     "alert": {
       "external_id": "ALERT-2015",
       "service": "notifications",
-      "title": "Blank notifications sent \u2014 template rendering errors",
+      "title": "Customers receiving empty message bodies in eu-west-1",
       "description": "customers in eu-west-1 getting blank alerts; roughly 34% of renders throw missing-variable since the template release.",
       "severity": "SEV-2"
     },
@@ -179,7 +179,7 @@
     "alert": {
       "external_id": "ALERT-2016",
       "service": "db-cluster",
-      "title": "Transaction retries spiking \u2014 serialization conflicts",
+      "title": "Application transaction failures above threshold in eu-west-1",
       "description": "application logs full of serialization failures in eu-west-1, about 37% of transactions; commits stretch to 400 ms under contention.",
       "severity": "SEV-2"
     },
@@ -190,7 +190,7 @@
     "alert": {
       "external_id": "ALERT-2017",
       "service": "db-cluster",
-      "title": "Single range saturated \u2014 sequential key hotspot",
+      "title": "Write latency degraded cluster-wide \u2014 us-east-1",
       "description": "writes slow cluster-wide from one hot range in us-east-1, p99 1200 ms; timestamp-ordered keys hammer a single node at 85% CPU.",
       "severity": "SEV-2"
     },
@@ -201,7 +201,7 @@
     "alert": {
       "external_id": "ALERT-2018",
       "service": "db-cluster",
-      "title": "Node disk pressure \u2014 compactions falling behind",
+      "title": "Intermittent write stalls observed in eu-west-1",
       "description": "intermittent write stalls (~1200 ms) in eu-west-1; one node near 37% disk with 19 GB of pending compactions.",
       "severity": "SEV-2"
     },
@@ -212,7 +212,7 @@
     "alert": {
       "external_id": "ALERT-2019",
       "service": "db-cluster",
-      "title": "Nightly backup saturating IO \u2014 foreground latency breach",
+      "title": "Read latency spikes during the overnight window in ap-southeast-1",
       "description": "nightly latency spikes in ap-southeast-1: reads at 4800 ms while backups eat 54% of disk bandwidth.",
       "severity": "SEV-2"
     },

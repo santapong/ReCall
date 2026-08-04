@@ -2,12 +2,20 @@
 
 ZERO SQL in this file, no psycopg import, ever (docs/05 module boundary — a test
 greps for it). This module sees the functions in tools.TOOL_MANIFEST (plus the
-loop-side record_retrieval helper) and nothing else. The system prompt is loaded
-from prompts/system.md at runtime, never inlined — prompt changes must be diffable.
+loop-side record_retrieval and log_step helpers) and nothing else. The system prompt
+is loaded from prompts/system.md at runtime, never inlined — prompt changes must be
+diffable.
+
+Every step the loop takes is appended to the agent_runs decision log via
+tools.log_step: one row per model turn and per tool call, in execution order, with
+latency, tokens, and outcome. Logging is best-effort and can never fail a diagnosis —
+see the ADR in tools.log_step.
 """
 
 import json
 import os
+import time
+import uuid
 from pathlib import Path
 
 import boto3
@@ -83,21 +91,66 @@ def load_system_prompt() -> str:
     return body.strip() if sep else text.strip()
 
 
-def _dispatch(name: str, args: dict, incident_id: str):
+def _ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
+class _RunLog:
+    """Step sequencer for one agent run. Owns the run_id and the seq counter so the
+    loop body stays readable and the ordering can't drift. Writes go through
+    tools.log_step — this class holds no SQL and no connection."""
+
+    def __init__(self, incident_id: str):
+        self.run_id = str(uuid.uuid4())
+        self.incident_id = incident_id
+        self.seq = 0
+
+    def step(self, step_type: str, name: str, outcome: str, latency_ms: int, **extra):
+        tools.log_step(
+            run_id=self.run_id, incident_id=self.incident_id, seq=self.seq,
+            step_type=step_type, name=name, outcome=outcome, latency_ms=latency_ms,
+            **extra,
+        )
+        self.seq += 1
+
+
+def _dispatch(name: str, args: dict, incident_id: str, log: "_RunLog"):
     """One tool call: manifest lookup → run → (json result | error text back to the
     model). Tool validation errors (an invented ID, an illegal uncited diagnosis)
     return as errors so the model can correct itself — the DB write never happened
-    (AC3). Anything else is a real bug and raises loudly."""
+    (AC3). Anything else is a real bug and raises loudly.
+
+    Both outcomes are logged: a rejected citation is the most interesting row in the
+    decision log, because it is the enforcement working."""
     fn = tools.TOOL_MANIFEST[name]
+    started = time.perf_counter()
     try:
         result = fn(**args)
     except (LookupError, ValueError) as exc:
+        log.step("tool_call", name, "error", _ms(started), detail=str(exc))
         return {"status": "error", "content": [{"text": str(exc)}]}
+    confidence = getattr(result, "confidence", None)
+    log.step("tool_call", name, "success", _ms(started), confidence=confidence)
     if name == "search_incidents":
         # The loop, not the model, persists what was retrieved — AC11 reads this.
         tools.record_retrieval(incident_id, result)
     payload = result.model_dump_json() if hasattr(result, "model_dump_json") else "ok"
     return {"status": "success", "content": [{"json": json.loads(payload) if payload != "ok" else {"ok": True}}]}
+
+
+def _converse(system, messages, log: "_RunLog"):
+    """One Bedrock turn, timed and logged. Token counts come from the Converse
+    response's usage block — cost is an NFR, so it is recorded, not estimated."""
+    started = time.perf_counter()
+    resp = with_throttle_retry(lambda: get_client().converse(
+        modelId=MODEL_ID, system=system, messages=messages,
+        toolConfig={"tools": TOOL_SPECS},
+    ))
+    usage = resp.get("usage") or {}
+    log.step("model_turn", MODEL_ID, "success", _ms(started),
+             input_tokens=usage.get("inputTokens"),
+             output_tokens=usage.get("outputTokens"))
+    return resp
 
 
 def run_agent(incident_id: str, service: str, title: str, description: str) -> str:
@@ -114,13 +167,10 @@ def run_agent(incident_id: str, service: str, title: str, description: str) -> s
         "title": title, "description": description,
     })}]}]
     proposed = False
+    log = _RunLog(incident_id)
 
     for _ in range(MAX_TURNS):
-        resp = with_throttle_retry(lambda: get_client().converse(
-            modelId=MODEL_ID, system=system, messages=messages,
-            toolConfig={"tools": TOOL_SPECS},
-        ))
-        message = resp["output"]["message"]
+        message = _converse(system, messages, log)["output"]["message"]
         messages.append(message)
         tool_uses = [c["toolUse"] for c in message["content"] if "toolUse" in c]
 
@@ -131,7 +181,7 @@ def run_agent(incident_id: str, service: str, title: str, description: str) -> s
 
         results = []
         for use in tool_uses:
-            outcome = _dispatch(use["name"], use["input"], incident_id)
+            outcome = _dispatch(use["name"], use["input"], incident_id, log)
             if use["name"] == "propose_diagnosis" and outcome["status"] == "success":
                 proposed = True
             results.append({"toolResult": {"toolUseId": use["toolUseId"], **outcome}})
@@ -139,10 +189,7 @@ def run_agent(incident_id: str, service: str, title: str, description: str) -> s
 
         if proposed:
             # Diagnosis persisted — one closing turn for the model to summarize.
-            final = with_throttle_retry(lambda: get_client().converse(
-                modelId=MODEL_ID, system=system, messages=messages,
-                toolConfig={"tools": TOOL_SPECS},
-            ))["output"]["message"]
+            final = _converse(system, messages, log)["output"]["message"]
             return "".join(c.get("text", "") for c in final["content"]).strip()
 
     raise RuntimeError(

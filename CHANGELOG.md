@@ -10,6 +10,61 @@ below are those criteria, defined in [`docs/01-objective-roadmap.md`](docs/01-ob
 
 ## [Unreleased]
 
+### 2026-08-04 (later) — the benchmark told the truth for the first time; observability landed
+
+A review pass against the judging rubric found one thing that had to be fixed before anything
+else, and two worth the hours. Suite: 50 → 58 green.
+
+#### Fixed
+- **AC2 was a string-identity check, not retrieval.** All 20 eval alert titles were byte-identical
+  to their target incident's title (measured similarity 1.00, 20/20). `search_incidents` embeds
+  `title + description`, so the query literally contained the target document's title — the
+  benchmark could not fail, and therefore measured nothing, while the README pointed judges
+  straight at it. `infra/seed/generate.py` now carries `ALERT_TITLES`: one monitor-voice alert
+  title per archetype. The register is the fix — an incident title is written post-hoc by a human
+  who knows the cause; an alert title is emitted by a monitor that knows only the symptom that
+  crossed a threshold. Regenerated: identical 20/20 → 0/20, mean title similarity 0.32, max 0.54.
+  AC2's floor stays 18/20; if the number now drops, that is the first honest reading it has had.
+
+#### Added
+- **`tests/test_eval_independence.py`** — the guard, stated sharply: not "are the strings
+  different" but *can the target be singled out of its own service-scoped search space by string
+  match alone*. No token shared between an alert and its target may be unique to that target among
+  its siblings. Plus a similarity ceiling, and a floor test so the pairs don't diverge into
+  non-pairs. It caught one title at 0.64 on first run, which is the test earning its place.
+- **`agent_runs` — the replayable decision log** (`infra/migrations/0002_agent_runs.sql`). One row
+  per step of a run — model turn or tool call — in execution order, with latency, token counts,
+  outcome, and the live confidence label. `ORDER BY run_id, seq` replays the exact interleaving.
+  `tools.log_step` / `tools.run_log` are non-manifest helpers, so `tools.py` stays the only writer
+  and AC4's manifest stays closed at four. `agent.py` gained a `_RunLog` sequencer and a
+  `_converse` wrapper — still zero SQL, still no psycopg, boundary tests unchanged and green.
+  A rejected citation lands as an `error` row: the enforcement working is the most valuable line
+  in the log.
+- **`GET /runlog?incident_id=`** — read-only decision-log endpoint, curl-able for the video.
+- **`PLAN.md`** — Aug 4→18 re-cut against real capacity (32h available vs 41h planned), cut order
+  pre-decided, typed exit criteria, kill gates per milestone, and `M3` as the falsifiable
+  de-risking artifact: prove the refusal branch fires reliably on live distances *before* filming
+  the shot that claims it does.
+
+#### Changed
+- **`log_step` is a deliberate exception to docs/05's "failures are loud."** It swallows and
+  prints. Telemetry that can fail a diagnosis is worse than no telemetry — an unreachable
+  `agent_runs` must never take down the incident response it describes. ADR and flip condition in
+  the docstring; asserted end-to-end by `test_unreachable_decision_log_never_breaks_a_diagnosis`.
+- **README repositioned.** The lead was database durability, which scores in one of five equally
+  weighted judging criteria. It now leads with the structural-honesty guarantee — the thing two
+  independent 2026 sources ([arXiv 2602.09937](https://arxiv.org/abs/2602.09937); Grafana's
+  harness team) name as the field's unsolved problem, and the thing this repo already solved. New
+  **"The guarantee — structural, not instructional"** section with the three invariants and how
+  each fails CI, and a **"What we don't claim"** section answering the three objections a
+  skeptical reader will already have: similar-incident retrieval is table stakes; incident.io
+  rejected vector embeddings for debuggability; and "your memory dies with your infra" is weaker
+  than it sounds — the defensible claim is correlation and concentration, not co-location.
+- **`docs/09` demo script → v2.** Cut order changed: the refusal gets its own 27-second beat at
+  0:28; the node kill is demoted from thesis to one proven failure mode. Nothing cut from the
+  build — only the ordering. Added a decision-log beat to the time-travel shot, and a note to put
+  one MCP query on camera (Stage One is pass/fail on tools being meaningfully used).
+
 ### 2026-08-04 — everything buildable without cloud credentials, built
 
 The credential gate is now the *only* gate: every module, test, page and rig that could exist

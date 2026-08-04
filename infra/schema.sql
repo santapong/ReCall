@@ -40,3 +40,26 @@ CREATE TABLE working_state (
     confidence STRING,                -- 'high' | 'low' | 'none' (AC13)
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Observability, not memory: the replayable decision log (migration 0002). One row per
+-- step of an agent run — model turn or tool call — in execution order. working_state
+-- says what the agent believed; this says what it did, what it cost, where it failed.
+CREATE TABLE agent_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID NOT NULL,             -- one agent invocation; groups its steps
+    incident_id UUID NOT NULL REFERENCES incidents(id),
+    seq INT NOT NULL,                 -- step order within the run, 0-based
+    step_type STRING NOT NULL,        -- 'model_turn' | 'tool_call'
+    name STRING NOT NULL,             -- Bedrock model id, or the tool name
+    outcome STRING NOT NULL,          -- 'success' | 'error'
+    latency_ms INT NOT NULL,
+    input_tokens INT,                 -- model turns only
+    output_tokens INT,                -- model turns only
+    confidence STRING,                -- set on search_incidents steps (AC13 audit trail)
+    detail STRING,                    -- error text, truncated; NULL on success
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (run_id, seq)
+);
+CREATE INDEX idx_agent_runs_run ON agent_runs (run_id, seq);
+CREATE INDEX idx_agent_runs_incident ON agent_runs (incident_id, created_at DESC);

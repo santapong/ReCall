@@ -2,7 +2,7 @@
 
 # Recall
 
-### An on-call agent that remembers every incident your team ever had — <br/>and whose memory survives the very outages it's diagnosing.
+### An on-call agent that cannot invent an incident. <br/>Not because the prompt forbids it — because the write path refuses it.
 
 [![CI](https://github.com/santapong/ReCall/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/santapong/ReCall/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
@@ -14,10 +14,12 @@
 **CockroachDB × AWS hackathon entry** · built solo, in the open · submission target **Aug 17, 2026**
 
 [The problem](#the-problem) ·
+[The guarantee](#the-guarantee--structural-not-instructional) ·
 [Who it's for](#who-its-for) ·
 [How it works](#how-it-works) ·
 [Architecture](#architecture) ·
 [Memory design](#memory-design--three-layers) ·
+[What we don't claim](#what-we-dont-claim) ·
 [Why CockroachDB](#why-cockroachdb) ·
 [Quickstart](#quickstart) ·
 [Roadmap](#roadmap)
@@ -27,37 +29,54 @@
 ---
 
 > **Status — Aug 4.** All application code is built and tested: the 4-tool memory surface
-> (read *and* write sides), the Bedrock Converse loop, ingest + status endpoints, the status page,
-> the seed loader, the AC2 eval harness, and a rehearsed 3-node kill rig. What has not yet happened
-> is the first *live* run — cloud credentials (CockroachDB Cloud + Bedrock) are the remaining
-> gate. 50 tests green, DB-backed ones running against a real local CockroachDB.
-> Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
+> (read *and* write sides), the Bedrock Converse loop, ingest + status + runlog endpoints, the
+> status page, the seed loader, the AC2 eval harness, the `agent_runs` decision log, and a
+> rehearsed 3-node kill rig. What has not yet happened is the first *live* run — cloud credentials
+> (CockroachDB Cloud + Bedrock) are the remaining gate. 58 tests green, DB-backed ones running
+> against a real local CockroachDB. Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## The problem
 
-Tribal on-call knowledge lives in senior engineers' heads and rots in unread postmortems. When they
-leave, it evaporates — and the next 2 a.m. incident gets diagnosed from zero, again. The knowledge
-isn't missing; it's unreachable at the moment it matters.
+An LLM asked to diagnose a production incident will always produce an answer. That is the problem.
 
-The pain, concretely:
+The largest published study of the failure mode — [1,675 agent runs across five models on
+OpenRCA](https://arxiv.org/abs/2602.09937) (Feb 2026) — found the two dominant failure modes are
+**hallucinated data interpretation** and **incomplete exploration**, and that they *"persist across
+all models regardless of capability tier."* Its conclusion is the uncomfortable one: **"prompt
+engineering alone cannot resolve the dominant pitfalls."** Grafana's incident-agent team reached the
+same place from the opposite direction — *["structural enforcement beats instructions. Harness gates
+outperform 'you MUST' in
+prompts."](https://medium.com/grafana-labs/inside-the-harness-how-grafana-assistant-investigates-incidents-9a982b8ff01d)*
 
-- **The same incident gets solved twice.** A failure that took four hours to root-cause last
-  quarter takes four hours again, because the fix lives in a postmortem nobody opens at 2 a.m.
-- **Diagnosis speed depends on who answers the page.** The engineer with eight years of context
-  resolves in minutes; the new hire escalates. Mean time to resolution is really mean time to the
-  right memory.
-- **Postmortems are write-only.** Teams invest hours writing them; retrieval at incident time is
-  grep-and-hope. The knowledge base grows while its usefulness doesn't.
-- **Off-the-shelf AI assistants make it worse, confidently.** A model without incident memory
-  produces generic advice — or worse, a plausible-sounding diagnosis with no grounding. On-call
-  needs citations, not vibes.
+At 2 a.m. this is not an abstraction. A confident, ungrounded root cause sends the on-call engineer
+down a wrong path, and it is *more* expensive than no answer at all, because it is credible.
 
-**Recall makes institutional incident memory durable, queryable, and agent-native.** An alert comes
-in; the agent retrieves the closest past incidents from a distributed vector index, proposes a
-diagnosis grounded in the real resolution that worked last time — citing real incident IDs and a
-real runbook step — and writes the fix back on close. Every resolved incident makes the next one
-faster. And because that memory lives in CockroachDB, it survives the very outages it's helping
-diagnose.
+Underneath it sits the ordinary rot: tribal knowledge lives in senior engineers' heads and dies in
+unread postmortems. The same failure takes four hours to root-cause twice. Diagnosis speed is really
+a function of who answers the page. The knowledge isn't missing — it's unreachable at the moment it
+matters, so the model fills the gap with fluent invention.
+
+**Recall's answer is not a better prompt.** The agent gets exactly four tools and no escape hatches;
+every incident ID it cites is checked against the database *before* the write; an uncited diagnosis
+is legal only on the branch where the agent has already said "I don't know." The honesty is a
+property of the code path, not of the model's good behaviour on the day.
+
+## The guarantee — structural, not instructional
+
+Three invariants. None of them are honour-system, and each fails CI if broken.
+
+| Invariant | Enforced by | Fails how |
+|---|---|---|
+| **The agent cannot cite an incident that doesn't exist** | `propose_diagnosis` validates every `cited_incident_ids` entry against the DB *before* the working-memory write | `LookupError` — the write never happens; the error goes back to the model in-band so it can correct itself, and lands in `agent_runs` as an `error` row |
+| **The agent cannot bluff when memory is empty** | `search_incidents` returns a confidence label from frozen distance thresholds; an empty `cited_incident_ids` is accepted *only* when confidence is `none` | `ValueError` — a diagnosis with no citations on a `high`/`low` branch is refused, not logged and shipped |
+| **The agent cannot reach anything but memory** | `TOOL_MANIFEST` is closed at four tools — no raw SQL, no execute, no shell | [`tests/test_manifest.py`](tests/test_manifest.py) fails on a fifth tool; [`tests/test_module_boundaries.py`](tests/test_module_boundaries.py) fails if `agent.py` imports psycopg or contains SQL |
+
+The manifest is also, deliberately, **propose-only**: Recall never executes a fix. It writes a
+diagnosis into working memory and stops. The close path is a separate tool a human triggers.
+
+This is the part that is hard to retrofit. Adding memory to an agent is a weekend; making its
+answers structurally refuse to exceed their evidence is the thing that decides whether an on-call
+engineer trusts it at 2 a.m.
 
 ## Who it's for
 
@@ -82,9 +101,14 @@ diagnose.
    ID doesn't just violate the prompt; the write path rejects it before it can persist.
 4. On close, the resolution is scrubbed of names and written back — so the *very next* similar alert
    retrieves it.
+5. Every step of that run is appended to `agent_runs`, in order, with latency and token cost — so the
+   diagnosis can be replayed after the fact instead of taken on faith.
 
-**Signature demo:** kill a database node mid-diagnosis, live on camera. The in-flight answer
-completes; row counts stay identical; the incident clock never stops.
+**Signature demo:** hand the agent an alert nothing in memory matches. It states `confidence: none`,
+says so plainly, and stops — no citation, no guess, no fluent invention. Then force a fabricated
+incident ID into the write path and watch it bounce, on camera, into the decision log as an `error`
+row. The node-kill take follows: kill a database node mid-diagnosis, the in-flight answer completes,
+row counts stay identical, the incident clock never stops.
 
 ## Architecture
 
@@ -123,31 +147,75 @@ Schema: [`infra/schema.sql`](infra/schema.sql). Retrieval is a service-scoped `<
 decay re-rank in Python (`score = (1 − norm_distance) · exp(−age_days / half_life)`), so the ranking
 is tunable and unit-testable.
 
+### And one table that isn't memory
+
+`agent_runs` is the **replayable decision log** ([`0002`](infra/migrations/0002_agent_runs.sql)): one
+row per step of a run — model turn or tool call — in execution order, with latency, token counts,
+outcome, and the confidence label that was live at the time. `ORDER BY run_id, seq` replays the exact
+interleaving the loop executed. Read it with `GET /runlog?incident_id=…`.
+
+The three memory tables say what the agent *believed*. This one says what it *did*, what it cost, and
+where it was refused — a rejected citation is an `error` row, which makes it the most interesting
+line in the log. Logging is best-effort by explicit decision: telemetry that can fail a diagnosis is
+worse than no telemetry, so `tools.log_step` swallows and prints rather than raising. The ADR and its
+flip condition are in the docstring; a test asserts a diagnosis survives an unreachable log.
+
 ## The agent's contract
 
-The tool manifest is **closed at exactly four tools** — memory read/write only, no raw SQL, no escape
-hatches. This isn't a style choice; it's the security and honesty story, and a test fails if anyone
-adds a fifth.
+The whole surface, four tools, no escape hatches. The guarantees are [above](#the-guarantee--structural-not-instructional);
+this is what each one does.
 
 | Tool | Does | Guarantee |
 |---|---|---|
 | `search_incidents` | vector search + decay re-rank | returns an explicit confidence label: `high` / `low` / `none` |
-| `get_runbook` | fetch one runbook by ID | read-only, no search |
-| `propose_diagnosis` | record the diagnosis | writes *working memory only*; cited IDs are validated against the DB — an unknown ID raises, never persists |
+| `get_runbook` | fetch one runbook by ID | read-only, no search — IDs come from search results only |
+| `propose_diagnosis` | record the diagnosis | writes *working memory only*; cited IDs validated against the DB — an unknown ID raises, never persists |
 | `write_incident` | close + write back the fix | blameless scrub first: names, @handles, emails never persist |
 
-**Propose-only:** the agent never executes fixes. **Confidence honesty:** at `none` it says "no close
-match in memory" and stops — zero invented incident IDs, enforced by tests. An uncited diagnosis is
-only accepted on that honesty branch; anywhere else the write path refuses it.
+## What we don't claim
+
+Three things a skeptical reader should have already thought, answered plainly. Pretending they
+aren't there is how a demo stops being credible.
+
+**"Similar past incidents" is not a new feature.** incident.io, PagerDuty, ServiceNow, Atlassian and
+Rootly all ship it, and [Azure's SRE Agent](https://learn.microsoft.com/en-us/azure/sre-agent/memory)
+went GA in April 2026 with a near-identical three-source memory design. Recall is not claiming to
+have invented incident memory. It is claiming that *what the agent is structurally prevented from
+doing with that memory* is the part that decides whether it gets trusted — and that part is
+consistently the thing that gets bolted on last.
+
+**Vector search is a contested choice.** incident.io, who run this at real scale,
+[evaluated embeddings and moved away from them](https://www.zenml.io/llmops-database/ai-powered-incident-response-system-with-multi-agent-investigation)
+for text similarity plus LLM reranking, because *"vector embeddings presented significant debugging
+challenges."* That critique is correct and it is the reason retrieval here is observable by
+construction: `decay_score` is a pure function with an injectable clock and unit tests, raw distances
+ride on every `Match`, every retrieval is persisted to `working_state`, and `AS OF SYSTEM TIME` can
+replay what was retrieved at any past instant. If a rank looks wrong you can read exactly why. That
+is the debuggability they said embeddings cost them.
+
+**"Your incident memory dies with your infrastructure" is weaker than it sounds.** The principle is
+canonical — the Google SRE Book warns against
+[depending on the software you are trying to fix](https://sre.google/sre-book/managing-incidents/) —
+and Atlassian's April 2022 outage took Jira, Confluence, Opsgenie *and* Statuspage from 775 customers
+at once. But most teams' postmortems live in third-party SaaS in a different failure domain: during
+the AWS us-east-1 outage of Oct 2025, [incident.io stayed up](https://incident.io/blog/service-disruption-october-20th-2025)
+and customers kept their incident history. The honest version of the claim is **correlation and
+concentration** — your prod and your tooling in the same region, or your wiki and your on-call tool
+behind one vendor — not co-location. The node-kill demo proves survivability under node loss. It
+does not prove that everyone's current setup is broken.
 
 ## Why CockroachDB
 
-| The demo needs | CockroachDB delivers |
+| The system needs | CockroachDB delivers |
 |---|---|
-| Memory that survives infrastructure failure | Distributed, replicated SQL — kill 1 of 3 nodes mid-diagnosis, zero committed rows lost (rig rehearsed: [`infra/chaos/`](infra/chaos/index.md)) |
 | Semantic search over incidents | Native `VECTOR` type + distributed vector index (C-SPANN), scoped per service by a prefix column |
-| "What did memory believe at 02:14?" | `AS OF SYSTEM TIME` time-travel reads |
-| A boring, auditable data path | Postgres wire protocol — plain parameterized SQL via psycopg 3, no ORM |
+| "What did memory believe at 02:14?" | `AS OF SYSTEM TIME` time-travel reads over `working_state` and `agent_runs` |
+| A boring, auditable data path | Postgres wire protocol — plain parameterized SQL via psycopg 3, no ORM. Four tools map to four statements you can read |
+| Memory that survives node loss mid-diagnosis | Distributed, replicated SQL — kill 1 of 3 nodes, zero committed rows lost (rig rehearsed: [`infra/chaos/`](infra/chaos/index.md)) |
+
+One database for episodic memory, semantic memory, working state, the decision log, *and* the vector
+index. The alternative shape — Postgres plus a vector store plus a metrics backend — is three systems
+to keep consistent and three things that can fail mid-incident.
 
 ## Tech stack
 
@@ -155,8 +223,8 @@ only accepted on that honesty branch; anywhere else the write path refuses it.
 |---|---|---|
 | Agent | Claude on **AWS Bedrock** (Converse API), custom loop in [`lambda/agent.py`](lambda/agent.py) | full control of the 4-tool manifest; confidence branching stays visible; invented IDs bounce off the write path |
 | Embeddings | Bedrock Titan V2, 1024-d, `normalize:true` always | same platform, same credential, no second vendor; unit vectors keep `<->` metric-safe |
-| Ingest | **AWS Lambda** + Function URL (POST ingest, GET `/status` + `/health`) | one URL, zero gateway config, fewest moving parts on demo day |
-| Database | **CockroachDB** + distributed vector index | see table above — it *is* the thesis |
+| Ingest | **AWS Lambda** + Function URL (POST ingest, GET `/status` · `/health` · `/runlog`) | one URL, zero gateway config, fewest moving parts on demo day |
+| Database | **CockroachDB** + distributed vector index | memory, decision log and vector index in one system — see table above |
 | Frontend | one static HTML page, vanilla JS ([`status_page/`](status_page/index.md)) | the audience is a camera; build risk ≈ 0 |
 | Tooling | Python 3.12 · uv · psycopg 3 · pydantic · pytest · ruff | boring wins; every pick documented in [`docs/04`](docs/04-tech-stack.md) |
 
@@ -175,8 +243,8 @@ With any CockroachDB — Cloud free tier or a local single-node
 
 ```bash
 make probe                   # DDL + 5 rows + one `<->` vector query, then cleans up
-make migrate                 # apply infra/migrations/*.sql in order
-uv run pytest                # now 50/50 — the DB-backed tests run for real
+make migrate                 # apply infra/migrations/*.sql in order (0001 schema, 0002 decision log)
+uv run pytest                # now 58/58 — the DB-backed tests run for real
 ```
 
 The AC7 resilience rig (needs Docker):
@@ -222,6 +290,11 @@ possible.
 - **Testing**: pytest is ground truth. The retrieval eval is a reproducible 20-alert benchmark with
   pinned expected IDs — ≥18/20 top-3 or the gate doesn't exit. DB tests run against a real
   single-node CockroachDB; mocked-DB tests are banned.
+- **The benchmark is guarded against itself.** Until Aug 4 every eval alert title was byte-identical
+  to its target incident's title, so AC2 was scoring string identity and calling it retrieval —
+  a benchmark that cannot fail. [`tests/test_eval_independence.py`](tests/test_eval_independence.py)
+  now asserts the sharper property: no token shared between an alert and its target may be *unique*
+  to that target within the service-scoped search space, so the answer can never be lexically free.
 - **Docs**: [`CLAUDE.md`](CLAUDE.md) is the agent-facing index with eight hard rules; every folder
   ships an `index.md`. Navigate by index — never bulk-load the repo to orient.
 - **Commits** name the acceptance criterion they advance: `feat(tools): decay re-rank [AC2]`.
