@@ -10,6 +10,10 @@ import pytest
 import agent
 import tools
 
+# Captured before the autouse `logged` fixture swaps it out, so one test can exercise
+# the shipping implementation rather than the capture stub.
+_REAL_LOG_STEP = tools.log_step
+
 
 class FakeClient:
     def __init__(self, responses):
@@ -50,6 +54,15 @@ def recorded(monkeypatch):
     calls = []
     monkeypatch.setattr(tools, "record_retrieval", lambda iid, res: calls.append((iid, res)))
     return calls
+
+
+@pytest.fixture(autouse=True)
+def logged(monkeypatch):
+    """Capture the decision log instead of writing it. Autouse because every run in
+    this module logs; the captured list is what the log-shape tests assert against."""
+    steps = []
+    monkeypatch.setattr(tools, "log_step", lambda **kw: steps.append(kw))
+    return steps
 
 
 def _install(monkeypatch, client, **tool_fns):
@@ -134,6 +147,70 @@ def test_unset_model_id_is_loud(monkeypatch):
     monkeypatch.setattr(agent, "MODEL_ID", "")
     with pytest.raises(RuntimeError, match="BEDROCK_MODEL_ID"):
         agent.run_agent("inc-5", "billing", "t", "d")
+
+
+def test_decision_log_records_every_step_in_order(monkeypatch, recorded, logged):
+    """Observability is a contract, not a side effect: one row per model turn and per
+    tool call, sequential seq, one run_id for the whole run."""
+    client = FakeClient([
+        {**_tool_msg("search_incidents", {"query": "q", "service": "billing"}),
+         "usage": {"inputTokens": 900, "outputTokens": 40}},
+        _text_msg("confidence none: no close match exists in memory."),
+    ])
+    _install(monkeypatch, client, search_incidents=lambda **kw: _search_result("none"))
+    agent.run_agent("inc-6", "billing", "t", "d")
+
+    assert [s["seq"] for s in logged] == list(range(len(logged)))
+    assert len({s["run_id"] for s in logged}) == 1
+    assert all(s["incident_id"] == "inc-6" for s in logged)
+    assert [(s["step_type"], s["name"]) for s in logged] == [
+        ("model_turn", "test-model"),
+        ("tool_call", "search_incidents"),
+        ("model_turn", "test-model"),
+    ]
+    assert logged[0]["input_tokens"] == 900 and logged[0]["output_tokens"] == 40
+    assert logged[1]["confidence"] == "none"  # AC13's audit trail
+    assert all(isinstance(s["latency_ms"], int) for s in logged)
+
+
+def test_decision_log_records_the_rejected_citation(monkeypatch, recorded, logged):
+    """The enforcement working is the most valuable row in the log — it must be there."""
+    def rejecting_propose(**kw):
+        raise LookupError("cites unknown incident ids ['ghost'] (AC3)")
+
+    client = FakeClient([
+        _tool_msg("search_incidents", {"query": "q", "service": "billing"}),
+        _tool_msg("propose_diagnosis", {"incident_id": "inc-7", "diagnosis": "d",
+                                        "cited_incident_ids": ["ghost"]}),
+        _text_msg("confidence low: cannot ground this."),
+    ])
+    _install(monkeypatch, client,
+             search_incidents=lambda **kw: _search_result("low"),
+             propose_diagnosis=rejecting_propose)
+    agent.run_agent("inc-7", "billing", "t", "d")
+
+    errors = [s for s in logged if s["outcome"] == "error"]
+    assert len(errors) == 1
+    assert errors[0]["name"] == "propose_diagnosis"
+    assert "ghost" in errors[0]["detail"]
+
+
+def test_unreachable_decision_log_never_breaks_a_diagnosis(monkeypatch, recorded, capsys):
+    """The ADR in tools.log_step, asserted end-to-end with the REAL logger against an
+    unreachable database: the run completes, and the drop is visible rather than silent.
+    """
+    monkeypatch.setattr(tools, "log_step", _REAL_LOG_STEP)  # undo the autouse capture
+    monkeypatch.delenv("CRDB_CONN_STRING", raising=False)
+    client = FakeClient([
+        _tool_msg("search_incidents", {"query": "q", "service": "billing"}),
+        _text_msg("confidence none: no close match exists in memory."),
+    ])
+    _install(monkeypatch, client, search_incidents=lambda **kw: _search_result("none"))
+
+    out = agent.run_agent("inc-8", "billing", "t", "d")
+
+    assert "no close match" in out  # the diagnosis survived the observability outage
+    assert "agent_runs log dropped" in capsys.readouterr().out  # and said so
 
 
 def test_system_prompt_loads_the_contract():

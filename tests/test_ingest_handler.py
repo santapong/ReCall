@@ -76,6 +76,24 @@ def test_get_status_routes_to_snapshot(monkeypatch):
     assert no_param["statusCode"] == 404
 
 
+def test_get_runlog_routes_to_decision_log(monkeypatch):
+    steps = [{"seq": 0, "step_type": "model_turn", "name": "claude", "outcome": "success",
+              "latency_ms": 812, "input_tokens": 900, "output_tokens": 40,
+              "confidence": None, "detail": None,
+              "created_at": "2026-08-04T00:00:00+00:00"}]
+    monkeypatch.setattr(tools, "run_log", lambda iid: steps if iid == "inc-1" else [])
+
+    resp = ingest_handler.handler(_get_event("/runlog", {"incident_id": "inc-1"}), None)
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) == {"incident_id": "inc-1", "steps": steps}
+
+    # An incident with no run yet is an empty log, not a 404 — the page polls this.
+    empty = ingest_handler.handler(_get_event("/runlog", {"incident_id": "inc-2"}), None)
+    assert empty["statusCode"] == 200 and json.loads(empty["body"])["steps"] == []
+
+    assert ingest_handler.handler(_get_event("/runlog"), None)["statusCode"] == 400
+
+
 def test_get_health_routes_to_health(monkeypatch):
     monkeypatch.setattr(tools, "health", lambda: {"incidents": 92})
     resp = ingest_handler.handler(_get_event("/health"), None)

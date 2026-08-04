@@ -38,12 +38,19 @@ def handler(event, context):
         path = http.get("path", "")
         if path.endswith("/health"):
             return _response(200, tools.health())
+        incident_id = (event.get("queryStringParameters") or {}).get("incident_id", "")
         if path.endswith("/status"):
-            incident_id = (event.get("queryStringParameters") or {}).get("incident_id", "")
             snapshot = tools.status_snapshot(incident_id) if incident_id else None
             if snapshot is None:
                 return _response(404, {"error": f"no incident {incident_id!r}"})
             return _response(200, snapshot)
+        if path.endswith("/runlog"):
+            # The replayable decision log (migration 0002). Read-only, non-manifest —
+            # observability, not memory: every step the agent took, in execution order.
+            if not incident_id:
+                return _response(400, {"error": "incident_id is required"})
+            return _response(200, {"incident_id": incident_id,
+                                   "steps": tools.run_log(incident_id)})
         return _response(404, {"error": "unknown path"})
 
     raw = event.get("body") or ""

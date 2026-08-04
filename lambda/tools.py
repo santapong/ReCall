@@ -318,6 +318,86 @@ def record_retrieval(incident_id: str, result: SearchResult) -> None:
     db.with_retry(_write)
 
 
+_LOG_STEP_SQL = """
+    INSERT INTO agent_runs (run_id, incident_id, seq, step_type, name, outcome,
+                            latency_ms, input_tokens, output_tokens, confidence, detail)
+    VALUES (%(run_id)s, %(incident_id)s, %(seq)s, %(step_type)s, %(name)s, %(outcome)s,
+            %(latency_ms)s, %(input_tokens)s, %(output_tokens)s, %(confidence)s,
+            %(detail)s)
+    ON CONFLICT (run_id, seq) DO NOTHING
+"""
+
+MAX_DETAIL_CHARS = 500
+
+
+def log_step(*, run_id: str, incident_id: str, seq: int, step_type: str, name: str,
+             outcome: str, latency_ms: int, input_tokens: int | None = None,
+             output_tokens: int | None = None, confidence: str | None = None,
+             detail: str | None = None) -> None:
+    """Append one step to the replayable decision log (non-manifest — the loop calls
+    this, never the model). Schema and rationale: infra/migrations/0002.
+
+    **Deliberate exception to docs/05's "failures are loud".** Every other write in this
+    module raises; this one swallows and prints. Telemetry that can fail a diagnosis is
+    worse than no telemetry — an unreachable agent_runs table must never take down the
+    incident response it is describing. Best-effort by design; the print keeps the drop
+    visible in CloudWatch instead of silent.
+
+    ADR — decision: best-effort logging. Alternatives: raise (couples availability of
+    diagnosis to availability of observability), buffer-and-flush (state lost on a
+    Lambda freeze). Flip condition: if the decision log ever becomes a compliance record
+    rather than a debugging aid, it must become a loud write inside the same transaction
+    as the step it describes.
+    """
+    params = {
+        "run_id": run_id, "incident_id": incident_id, "seq": seq,
+        "step_type": step_type, "name": name, "outcome": outcome,
+        "latency_ms": int(latency_ms), "input_tokens": input_tokens,
+        "output_tokens": output_tokens, "confidence": confidence,
+        "detail": detail[:MAX_DETAIL_CHARS] if detail else None,
+    }
+
+    def _write():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_LOG_STEP_SQL, params)
+
+    try:
+        db.with_retry(_write)
+    except Exception as exc:  # noqa: BLE001 — see the docstring; this is the whole point
+        print(f"agent_runs log dropped (run={run_id} seq={seq}): {exc!r}")
+
+
+_RUN_LOG_SQL = """
+    SELECT seq, step_type, name, outcome, latency_ms, input_tokens, output_tokens,
+           confidence, detail, created_at
+    FROM agent_runs
+    WHERE incident_id = %(id)s
+    ORDER BY run_id, seq
+"""
+
+
+def run_log(incident_id: str) -> list[dict]:
+    """Read path for the decision log (non-manifest — the status page and the camera
+    read this, not the agent). Replays every step of every run for one incident, in
+    execution order. Pairs with AS OF SYSTEM TIME: working_state says what memory
+    believed at 02:14, this says what the agent did to get there and what it cost."""
+
+    def _fetch():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_RUN_LOG_SQL, {"id": incident_id})
+            return cur.fetchall()
+
+    return [
+        {"seq": r[0], "step_type": r[1], "name": r[2], "outcome": r[3],
+         "latency_ms": r[4], "input_tokens": r[5], "output_tokens": r[6],
+         "confidence": r[7], "detail": r[8],
+         "created_at": r[9].isoformat() if r[9] else None}
+        for r in db.with_retry(_fetch)
+    ]
+
+
 def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list[str]) -> None:
     """Write working_state ONLY. cited_incident_ids must be non-empty unless
     confidence == 'none' (AC3). Every ID is validated against the DB before the
