@@ -58,3 +58,26 @@ def test_empty_body_is_400(monkeypatch):
     _wire(monkeypatch)
     resp = ingest_handler.handler({}, None)
     assert resp["statusCode"] == 400
+
+
+def _get_event(path, params=None):
+    return {"requestContext": {"http": {"method": "GET", "path": path}},
+            "queryStringParameters": params or {}}
+
+
+def test_get_status_routes_to_snapshot(monkeypatch):
+    monkeypatch.setattr(tools, "status_snapshot",
+                        lambda iid: {"incident_id": iid} if iid == "inc-1" else None)
+    ok = ingest_handler.handler(_get_event("/status", {"incident_id": "inc-1"}), None)
+    assert ok["statusCode"] == 200
+    missing = ingest_handler.handler(_get_event("/status", {"incident_id": "nope"}), None)
+    assert missing["statusCode"] == 404
+    no_param = ingest_handler.handler(_get_event("/status"), None)
+    assert no_param["statusCode"] == 404
+
+
+def test_get_health_routes_to_health(monkeypatch):
+    monkeypatch.setattr(tools, "health", lambda: {"incidents": 92})
+    resp = ingest_handler.handler(_get_event("/health"), None)
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) == {"incidents": 92}

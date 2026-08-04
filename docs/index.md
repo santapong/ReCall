@@ -11,6 +11,7 @@ The operational design pack: consolidated truth for why, what, and how. Where a 
 | `06-claude-code-harness.md` | Session loop, doc policy, ODD, subagents | Every session |
 | `07-branching-worktrees.md` | Branch roles, merge flow, worktree layout + helper | Before creating any branch/worktree |
 | `08-final-sprint.md` | Aug 2→18 compressed schedule, closed decisions D1–D4, shot list | Every session until submission |
+| `09-demo-script.md` | The ≤3:00 video script, shot by shot, AC-mapped | At P3+, before filming |
 | `diagrams/` | The C4 set as SVG — **asset-only folder, no `index.md` by design** (see below) | When the architecture changes shape |
 | `plans/` | Source artifacts (read-only history) | Only to settle a "where did this come from" |
 

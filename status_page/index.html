@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbital · Recall</title>
+<style>
+  /* docs/03 tokens — tuned for 1080p video, not for a dashboard */
+  :root {
+    --ink:#12130f; --card:#1a1b16; --rule:#2c2d26; --text:#e9e7dd;
+    --muted:#97948a; --amber:#e6a53f; --teal:#5fb8a0; --alarm:#c9705c;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body {
+    background:var(--ink); color:var(--text); min-height:100vh; padding:20px;
+    font:16px/1.45 system-ui, sans-serif;
+  }
+  .mono { font-family:ui-monospace, "JetBrains Mono", Menlo, monospace; }
+  main { max-width:1080px; margin:0 auto; display:grid; gap:1px;
+         grid-template-columns:1fr 1fr; background:var(--rule);
+         border:1px solid var(--rule); }
+  section, header.bar { background:var(--card); padding:18px 20px; }
+  header.bar { grid-column:1/-1; display:flex; justify-content:space-between;
+               align-items:baseline; flex-wrap:wrap; gap:8px; }
+  .brand { color:var(--muted); letter-spacing:.08em; }
+  .brand b { color:var(--text); }
+  #clock { font-size:2.1rem; color:var(--amber); }
+  #inc-ref { color:var(--muted); margin-right:.6em; }
+  h2 { font-size:.78rem; letter-spacing:.14em; color:var(--muted);
+       text-transform:uppercase; margin-bottom:12px; font-weight:600; }
+  .full { grid-column:1/-1; }
+  #title { font-size:1.25rem; margin:6px 0 8px; }
+  .meta { color:var(--muted); }
+  .sev { color:var(--alarm); }
+  .match { display:flex; gap:14px; padding:6px 0; align-items:baseline; }
+  .match .dot { color:var(--teal); }
+  .match .id { min-width:9ch; }
+  .match .age { color:var(--muted); margin-left:auto; }
+  #diag-head { display:flex; justify-content:space-between; align-items:baseline; }
+  #badge { font-size:1.15rem; padding:2px 12px; border:1px solid var(--rule); }
+  #badge.high { color:var(--teal); border-color:var(--teal); }
+  #badge.low  { color:var(--amber); border-color:var(--amber); }
+  #badge.none { color:var(--muted); }
+  #diagnosis { margin-top:10px; white-space:pre-wrap; }
+  #log { list-style:none; color:var(--muted); font-size:.92rem; }
+  #log li { padding:2px 0; border-bottom:1px solid var(--rule); }
+  #log li:first-child { color:var(--text); }
+  .empty { color:var(--muted); }
+  a, button { color:inherit; }
+  :focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+  @media (max-width:700px) { main { grid-template-columns:1fr; } #clock { font-size:1.6rem; } }
+</style>
+</head>
+<body>
+<main>
+  <header class="bar">
+    <div class="brand">ORBITAL · <b>Recall</b></div>
+    <div class="mono"><span id="inc-ref">—</span><span id="clock" aria-label="elapsed incident time">00:00:00</span></div>
+  </header>
+
+  <section aria-labelledby="h-incident">
+    <h2 id="h-incident">Active incident</h2>
+    <div class="meta mono"><span id="service">—</span> · <span id="severity" class="sev">—</span></div>
+    <div id="title">waiting for incident…</div>
+    <div class="meta mono" id="opened"></div>
+  </section>
+
+  <section aria-labelledby="h-memory">
+    <h2 id="h-memory">Memory</h2>
+    <div id="memory"><div class="empty">no retrieval yet</div></div>
+  </section>
+
+  <section class="full" aria-labelledby="h-diag">
+    <div id="diag-head"><h2 id="h-diag">Diagnosis</h2>
+      <span id="badge" class="mono none">—</span></div>
+    <div id="diagnosis" class="empty">no diagnosis proposed</div>
+  </section>
+
+  <section class="full" aria-labelledby="h-log">
+    <h2 id="h-log">Event log</h2>
+    <ul id="log" class="mono"></ul>
+  </section>
+</main>
+
+<script>
+  // Config by query param — one page, zero build (docs/03).
+  //   ?incident_id=INC-2094        which incident to watch (required)
+  //   ?api=https://xyz.lambda-url  Function URL base (default: same origin)
+  //   ?memory=off                  AC12 amnesia view: memory panel empty
+  const q = new URLSearchParams(location.search);
+  const API = (q.get("api") || "").replace(/\/$/, "");
+  const INCIDENT = q.get("incident_id") || "";
+  const MEMORY_ON = q.get("memory") !== "off";
+  const $ = id => document.getElementById(id);
+
+  let openedAt = null, lastState = {};
+
+  function log(line) {
+    const li = document.createElement("li");
+    const t = new Date().toTimeString().slice(0, 8);
+    li.textContent = `${t}  ${line}`;
+    const ul = $("log");
+    ul.prepend(li);
+    while (ul.children.length > 6) ul.removeChild(ul.lastChild);
+  }
+
+  // The signature element: ticks every second, never stops — including during
+  // the node kill. It is information (proof the take is live), not decoration,
+  // so it ticks under prefers-reduced-motion too (docs/03).
+  setInterval(() => {
+    if (!openedAt) return;
+    const s = Math.max(0, Math.floor((Date.now() - openedAt) / 1000));
+    const p = n => String(n).padStart(2, "0");
+    $("clock").textContent = `${p(Math.floor(s/3600))}:${p(Math.floor(s/60)%60)}:${p(s%60)}`;
+  }, 1000);
+
+  function renderMemory(matchesJson) {
+    const box = $("memory");
+    if (!MEMORY_ON) {
+      box.innerHTML = '<div class="empty">memory disabled — agent answers from the alert alone</div>';
+      return;
+    }
+    let parsed = matchesJson;
+    if (typeof parsed === "string") { try { parsed = JSON.parse(parsed); } catch { parsed = null; } }
+    const matches = parsed && parsed.matches ? parsed.matches : [];
+    if (!matches.length) {
+      box.innerHTML = '<div class="empty">no close match in memory — 0 incidents within threshold</div>';
+      return;
+    }
+    box.innerHTML = "";
+    for (const m of matches.slice(0, 3)) {
+      const row = document.createElement("div");
+      row.className = "match mono";
+      const sim = (1 - m.distance / 2).toFixed(2);
+      const age = m.resolved_at
+        ? Math.round((Date.now() - Date.parse(m.resolved_at)) / 864e5) + "d" : "—";
+      row.innerHTML = `<span class="dot">●</span><span class="id"></span>` +
+                      `<span class="sim">${sim}</span><span class="age">${age}</span>`;
+      row.querySelector(".id").textContent = m.external_id || m.id.slice(0, 8);
+      box.appendChild(row);
+    }
+  }
+
+  function render(s) {
+    $("inc-ref").textContent = s.external_id || s.incident_id.slice(0, 8);
+    $("service").textContent = s.service;
+    $("severity").textContent = s.severity;
+    $("title").textContent = `“${s.title}”`;
+    if (s.opened_at) {
+      openedAt = Date.parse(s.opened_at);
+      $("opened").textContent = "opened " + new Date(openedAt).toTimeString().slice(0, 5);
+    }
+    renderMemory(s.retrieved_matches);
+    const badge = $("badge");
+    const conf = MEMORY_ON ? (s.confidence || "") : "";
+    badge.textContent = conf ? conf.toUpperCase() : "—";
+    badge.className = "mono " + (conf || "none");
+    const d = $("diagnosis");
+    if (s.proposed_diagnosis && MEMORY_ON) {
+      d.textContent = s.proposed_diagnosis; d.className = "";
+    }
+    // Event log: one line per observed state change.
+    if (conf && conf !== lastState.confidence) log(`retrieval done — confidence ${conf}`);
+    if (s.proposed_diagnosis && s.proposed_diagnosis !== lastState.proposed_diagnosis)
+      log("diagnosis proposed");
+    if (s.status !== lastState.status && lastState.status) log(`status → ${s.status}`);
+    lastState = s;
+  }
+
+  async function poll() {
+    if (!INCIDENT) { $("title").textContent = "add ?incident_id=… to the URL"; return; }
+    try {
+      const r = await fetch(`${API}/status?incident_id=${encodeURIComponent(INCIDENT)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      render(await r.json());
+    } catch (e) {
+      log(`poll failed: ${e.message} — retrying`);
+    }
+  }
+  poll();
+  setInterval(poll, 3000);
+</script>
+</body>
+</html>

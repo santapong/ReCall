@@ -20,6 +20,7 @@ Alert fires → Lambda ingests → agent (Claude on AWS Bedrock) searches Cockro
 | `docs/06-claude-code-harness.md` | How to work: session loop, doc policy, ODD, subagents | Every session, before coding |
 | `docs/07-branching-worktrees.md` | Branch roles, merge flow, worktree layout + helper | Before creating any branch or worktree |
 | `docs/08-final-sprint.md` | The live schedule (Aug 2→18), closed decisions D1–D4, video shot list | Every session until submission — **supersedes `01`'s dates** |
+| `docs/09-demo-script.md` | The ≤3:00 video script, shot by shot, AC-mapped | At P3+, before filming |
 
 Top-level folder indexes (read the folder's `index.md` before working in it): `.claude/` (the executable harness — skills, hooks, worker contract) · `docs/` · `infra/` · `lambda/` · `prompts/` · `scripts/` · `status_page/` · `tests/`.
 

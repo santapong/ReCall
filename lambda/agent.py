@@ -18,7 +18,11 @@ from embed import with_throttle_retry
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "")
 MAX_TURNS = 12
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "system.md"
+# Repo layout: lambda/../prompts/. Deployed zip (flat, make deploy): ./prompts/.
+_PROMPT_CANDIDATES = (
+    Path(__file__).resolve().parent / "prompts" / "system.md",
+    Path(__file__).resolve().parent.parent / "prompts" / "system.md",
+)
 
 # Converse toolSpec for the closed manifest (AC4). Names must match TOOL_MANIFEST
 # exactly — tests/test_manifest.py asserts both sides.
@@ -71,7 +75,10 @@ def get_client():
 def load_system_prompt() -> str:
     """The runtime prompt is everything below the `---` separator in system.md;
     above it is versioning prose for humans."""
-    text = _PROMPT_PATH.read_text(encoding="utf-8")
+    path = next((p for p in _PROMPT_CANDIDATES if p.exists()), None)
+    if path is None:
+        raise FileNotFoundError("prompts/system.md missing — the prompt ships with the code")
+    text = path.read_text(encoding="utf-8")
     _, sep, body = text.partition("\n---\n")
     return body.strip() if sep else text.strip()
 

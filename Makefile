@@ -32,9 +32,13 @@ migrate: ## apply numbered DDL files in infra/migrations/ in order
 seed: ## regenerate the Orbital corpus (P1)
 	uv run python infra/seed/generate.py
 
-deploy: ## zip lambda/ + update the function (P2 wires dependency bundling)
-	rm -rf build && mkdir -p build
-	cd lambda && zip -qr ../build/lambda.zip . -x '__pycache__/*'
+deploy: ## bundle lambda/ + prompts/ + deps into a zip, update the function
+	rm -rf build && mkdir -p build/pkg
+	uv pip install --target build/pkg --python-platform x86_64-manylinux2014 \
+		--python-version 3.13 --only-binary :all: 'psycopg[binary]' pydantic
+	cp lambda/*.py build/pkg/
+	mkdir -p build/pkg/prompts && cp prompts/system.md build/pkg/prompts/
+	cd build/pkg && zip -qr ../lambda.zip . -x '__pycache__/*'
 	aws lambda update-function-code --function-name $(FUNCTION_NAME) --zip-file fileb://build/lambda.zip
 
 branches-init: ## one-time: create + push dev and test from origin/main (docs/07)

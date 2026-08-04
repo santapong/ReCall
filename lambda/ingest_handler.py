@@ -33,6 +33,19 @@ def _response(status: int, body: dict) -> dict:
 
 
 def handler(event, context):
+    http = event.get("requestContext", {}).get("http", {})
+    if http.get("method") == "GET":
+        path = http.get("path", "")
+        if path.endswith("/health"):
+            return _response(200, tools.health())
+        if path.endswith("/status"):
+            incident_id = (event.get("queryStringParameters") or {}).get("incident_id", "")
+            snapshot = tools.status_snapshot(incident_id) if incident_id else None
+            if snapshot is None:
+                return _response(404, {"error": f"no incident {incident_id!r}"})
+            return _response(200, snapshot)
+        return _response(404, {"error": "unknown path"})
+
     raw = event.get("body") or ""
     if event.get("isBase64Encoded"):
         raw = base64.b64decode(raw).decode("utf-8")

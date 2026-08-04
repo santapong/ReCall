@@ -126,6 +126,26 @@ def test_write_incident_scrubs_resolves_and_embeds(incident):
     assert has_embedding and blame_scrubbed
 
 
+def test_status_snapshot_reads_incident_and_working_state(incident):
+    tools.record_retrieval(incident, tools.SearchResult(
+        query="q", service="billing", confidence="high", matches=[], runbook_ids=[]))
+    tools.propose_diagnosis(incident, "pool exhausted", [incident])
+    snap = tools.status_snapshot(incident)
+    assert snap["incident_id"] == incident
+    assert snap["proposed_diagnosis"] == "pool exhausted"
+    assert snap["confidence"] == "high"
+    # External-ID lookup works too (the demo curls INC-style IDs):
+    assert tools.status_snapshot(snap["external_id"])["incident_id"] == incident
+
+
+def test_status_snapshot_unknown_returns_none():
+    assert tools.status_snapshot(str(uuid.uuid4())) is None
+
+
+def test_health_counts_incidents(incident):
+    assert tools.health()["incidents"] >= 1
+
+
 def test_write_incident_unknown_id_raises():
     with pytest.raises(LookupError, match="no incident"):
         tools.write_incident(str(uuid.uuid4()), "resolution for a ghost")

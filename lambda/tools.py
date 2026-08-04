@@ -233,6 +233,52 @@ _CLOSE_SQL = """
 """
 
 
+_STATUS_SQL = """
+    SELECT i.id, i.external_id, i.service, i.title, i.severity, i.status, i.opened_at,
+           ws.proposed_diagnosis, ws.confidence, ws.retrieved_matches, ws.updated_at
+    FROM incidents i LEFT JOIN working_state ws ON ws.incident_id = i.id
+    WHERE i.id::STRING = %(id)s OR i.external_id = %(id)s
+"""
+
+_HEALTH_SQL = "SELECT count(*) FROM incidents"
+
+
+def status_snapshot(incident_id: str) -> dict | None:
+    """Read path for the status page (docs/03): one incident + its working memory.
+    Non-manifest — the camera reads this, not the agent. Accepts internal or
+    external ID so the demo can curl INC-style IDs."""
+
+    def _fetch():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_STATUS_SQL, {"id": incident_id})
+            return cur.fetchone()
+
+    row = db.with_retry(_fetch)
+    if row is None:
+        return None
+    return {
+        "incident_id": str(row[0]), "external_id": row[1], "service": row[2],
+        "title": row[3], "severity": row[4], "status": row[5],
+        "opened_at": row[6].isoformat() if row[6] else None,
+        "proposed_diagnosis": row[7], "confidence": row[8],
+        "retrieved_matches": row[9],
+        "updated_at": row[10].isoformat() if row[10] else None,
+    }
+
+
+def health() -> dict:
+    """Row count for the node-kill segment's /health endpoint (docs/03)."""
+
+    def _fetch():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_HEALTH_SQL)
+            return cur.fetchone()[0]
+
+    return {"incidents": int(db.with_retry(_fetch))}
+
+
 def insert_incident(external_id: str, service: str, title: str, description: str,
                     severity: str) -> str:
     """Ingest-side write (non-manifest — the agent never sees this; AC4 stays at 4).
