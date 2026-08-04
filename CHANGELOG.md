@@ -10,6 +10,60 @@ below are those criteria, defined in [`docs/01-objective-roadmap.md`](docs/01-ob
 
 ## [Unreleased]
 
+### 2026-08-04 — everything buildable without cloud credentials, built
+
+The credential gate is now the *only* gate: every module, test, page and rig that could exist
+without CockroachDB Cloud or Bedrock access exists and is verified. Suite: 26 → 50 green, with the
+DB-backed tests running against a real local single-node CockroachDB per the no-mocks rule.
+
+#### Added
+- **Local dev database + P0 local probe.** CockroachDB v25.2.2 single-node reinstated (user-space,
+  on-demand, no systemd). `make probe` and `make migrate` pass — recorded in `docs/02`:
+  `CREATE VECTOR INDEX` requires `SET CLUSTER SETTING feature.vector_index.enabled = true` on
+  self-hosted v25.2.2, then works. The Cloud Basic-tier answer stays open until credentials land.
+- **The write surface** (`lambda/tools.py`): `propose_diagnosis` validates every cited incident ID
+  against the database — an invented ID raises and never persists, and an uncited diagnosis is
+  accepted only on the `confidence='none'` honesty branch [AC3][AC13]; `write_incident` runs the
+  blameless scrub, embeds the resolution and closes the incident [AC5]; non-manifest helpers
+  `insert_incident` (idempotent on `external_id`) [AC1] and `record_retrieval` (persists matches +
+  confidence — the row the time-travel demo reads) [AC11]. The agent-facing manifest stays at four.
+- **The agent loop** (`lambda/agent.py`): Bedrock Converse loop dispatching only over
+  `TOOL_MANIFEST` (tool specs test-asserted to match it exactly [AC4]); tool validation errors
+  return to the model in-band so it can correct or take the honesty branch; the loop — not the
+  model — persists retrievals; a `MAX_TURNS` guard fails loudly. Offline-tested against a scripted
+  Bedrock fake.
+- **`prompts/system.md` v1** — confidence-first, cite-or-stop, never `write_incident` during
+  diagnosis. [AC13]
+- **`lambda/ingest_handler.py`**: pydantic `Alert` validation, base64 Function-URL bodies, 400 on
+  garbage without touching the database [AC1]; plus the read path — `GET /status` (incident +
+  working memory, internal or external ID) and `GET /health` (the on-camera row count).
+- **The status page** (`status_page/index.html`) per `docs/03`: house tokens, the always-ticking
+  elapsed clock, memory panel with similarity + age, confidence badge with the `NONE` state, event
+  log; `?memory=off` renders the amnesia view for the A/B shot [AC12]; `?api=` points it at any
+  Function URL. One file, no framework, no build step.
+- **The AC7 chaos rig** (`infra/chaos/`): 3-node docker-compose cluster pinned to v25.2.2,
+  `make chaos-up` / `chaos-down`. Rehearsed: node 2 killed mid-session; the surviving quorum
+  accepted a write and row counts held. [AC7]
+- **Seed loader** (`infra/seed/load.py`): embeds all 80 postmortems + 12 runbooks through the one
+  embedding surface and upserts them — re-runnable, ready the day Bedrock access lands. [AC2]
+- **AC2 eval harness** (`tests/retrieval_eval.py`): the 20-alert ≥18/20 top-3 gate, printing the
+  hit table for the README; skips with the reason until the corpus is embedded.
+- **Demo script v1** (`docs/09-demo-script.md`): the full ≤3:00 narration, shot by shot, AC-mapped.
+- Test files: `test_tools_write.py`, `test_agent_loop.py`, `test_ingest_handler.py`.
+
+#### Changed
+- **`make deploy` now produces a Lambda that can actually run**: bundles psycopg + pydantic and
+  ships `prompts/system.md` inside the zip (the previous target zipped bare source);
+  `agent.py` resolves the prompt in both repo and zip layouts.
+- C4 diagrams updated to match the as-built system: the status page polls the Lambda's
+  `GET /status` (not the database directly); `ingest_handler` carries the GET read path;
+  `tools.py` notes its non-manifest helpers.
+- README rewritten: objective + vision up front, a what/why/who/when/how table, honest per-phase
+  status (built vs. run-live), quickstart covering local node + chaos rig, and the parked list
+  reframed as the post-hackathon backlog.
+- Decision: **database strategy = both** — CockroachDB Cloud as the demo/primary target, the local
+  single-node for development. The AC7 rig stays local regardless (free tier has no killable nodes).
+
 ### 2026-08-02 — architecture diagrams, sprint plan, memory core · tagged `w1`
 
 **Frozen as `w1`** — the first runnable increment (`docs/07` KPI). What is real at this tag: the

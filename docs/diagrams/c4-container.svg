@@ -89,7 +89,7 @@
   <path d="M 785 408 L 785 450 L 690 450 L 690 492" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
   <text x="938" y="443" fill="#e9e7dd" font-size="12" text-anchor="end">parameterized SQL · psycopg 3</text>
 
-  <!-- Status page -> CockroachDB (elbow) -->
-  <path d="M 415 408 L 415 470 L 510 470 L 510 492" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <text x="300" y="464" fill="#e9e7dd" font-size="12">polls working_state</text>
+  <!-- Status page -> Lambda -->
+  <path d="M 544 345 L 652 345" fill="none" stroke="#97948a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="598" y="335" fill="#e9e7dd" font-size="12" text-anchor="middle">GET /status · 3 s</text>
 </svg>

@@ -9,35 +9,51 @@
 [![uv](https://img.shields.io/badge/deps-uv-261230?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-P0%20·%20probe-e6a53f)](docs/01-objective-roadmap.md)
+[![Status](https://img.shields.io/badge/status-P2%20·%20built%2C%20awaiting%20cloud%20creds-e6a53f)](docs/08-final-sprint.md)
 
 **CockroachDB × AWS hackathon entry** · built solo, in the open · submission target **Aug 17, 2026**
 
+[Objective & vision](#objective--vision) ·
+[The five W's](#what-why-who-when-how) ·
 [How it works](#how-it-works) ·
 [Architecture](#architecture) ·
 [Memory design](#memory-design--three-layers) ·
 [Why CockroachDB](#why-cockroachdb) ·
 [Quickstart](#quickstart) ·
-[Roadmap](#roadmap) ·
-[Development](#development)
+[Roadmap](#roadmap)
 
 </div>
 
 ---
 
-> **Status — P0, foundation probe.** The design is locked and fully documented in [`docs/`](docs/index.md);
-> the [roadmap](#roadmap) below tracks what is real today. The memory layer's retrieval, ranking and
-> confidence logic are implemented and unit-tested; they go live against a cluster the day the probe
-> lands. No demo URL or video yet — those come at P3–P5. Changes are logged in
-> [`CHANGELOG.md`](CHANGELOG.md).
+> **Status — Aug 4.** All application code is built and tested: the 4-tool memory surface
+> (read *and* write sides), the Bedrock Converse loop, ingest + status endpoints, the status page,
+> the seed loader, the AC2 eval harness, and a rehearsed 3-node kill rig. What has not yet happened
+> is the first *live* run — cloud credentials (CockroachDB Cloud + Bedrock) are the remaining
+> gate. 50 tests green, DB-backed ones running against a real local CockroachDB.
+> Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
 
-## The problem
+## Objective & vision
 
-Tribal on-call knowledge lives in senior engineers' heads and rots in unread postmortems. When they
-leave, it evaporates — and the next 2 a.m. incident gets diagnosed from zero, again. Recall makes
-institutional incident memory **durable, queryable, and agent-native**: every resolved incident makes
-the next one faster. And because that memory lives in CockroachDB, it survives the very outages it's
-helping diagnose.
+**Objective** (from [`docs/01`](docs/01-objective-roadmap.md)): submit a complete, judged-ready
+entry by **Aug 15, 2026, 5 pm EDT** — 72 hours early — passing all 13 acceptance criteria and every
+competition hard requirement, within a 60-hour solo build budget. Winning is upside, not the
+objective; no one controls judges.
+
+**Vision**: tribal on-call knowledge lives in senior engineers' heads and rots in unread
+postmortems. Recall makes institutional incident memory **durable, queryable, and agent-native** —
+every resolved incident makes the next one faster. And because that memory lives in CockroachDB,
+it survives the very outages it's helping diagnose.
+
+## What, why, who, when, how
+
+| | |
+|---|---|
+| **What** | An on-call incident copilot: alert in → grounded diagnosis out, citing the real past incident and the real runbook step that fixed it last time — with the resolution written back on close so memory compounds. |
+| **Why** | Every team re-diagnoses the same 2 a.m. incidents from zero after the one engineer who remembered leaves. Postmortems exist but nobody reads them mid-incident. The knowledge isn't missing — it's unreachable at the moment it matters. |
+| **Who** | **On-call engineers** (the diagnosis reaches them seconds after the page), **SRE/platform teams** (institutional memory stops depending on tenure), **engineering leaders** (postmortems become an asset with compounding returns), and — for this hackathon build — **judges** evaluating agentic memory design on CockroachDB + AWS. |
+| **When** | At alert time (retrieval + diagnosis in seconds), at close time (write-back), and at postmortem time (`AS OF SYSTEM TIME` shows exactly what memory believed mid-incident). |
+| **How** | Alert → Lambda → Claude on Bedrock driving a **closed 4-tool memory surface** → distributed vector search over past incidents in CockroachDB → propose-only diagnosis with validated citations → blameless scrubbed write-back. One Lambda, one database, one static page. |
 
 ## How it works
 
@@ -48,7 +64,8 @@ helping diagnose.
    past incidents at the fictional SaaS "Orbital" — scoped per service, decay-ranked so fresh
    incidents outrank stale ones.
 3. It proposes a diagnosis **grounded in a real past resolution**, citing real incident IDs and a real
-   runbook step — or, when nothing is close enough, says so plainly instead of guessing.
+   runbook step — or, when nothing is close enough, says so plainly instead of guessing. An invented
+   ID doesn't just violate the prompt; the write path rejects it before it can persist.
 4. On close, the resolution is scrubbed of names and written back — so the *very next* similar alert
    retrieves it.
 
@@ -62,10 +79,11 @@ no build step and no diagram toolchain to install. Each level zooms into the box
 
 ### Containers — the three deployable pieces
 
-<p align="center"><img src="docs/diagrams/c4-container.svg" alt="C4 Level 2 — containers: one AWS Lambda, one CockroachDB cluster, one static status page" width="100%"></p>
+<p align="center"><img src="docs/diagrams/c4-container.svg" alt="C4 Level 2 — containers: one AWS Lambda, one CockroachDB cluster, one static status page polling the Lambda" width="100%"></p>
 
 One Lambda, one database, one static page. That's the whole system, and the sparseness is a decision:
-every additional moving part is a part that can fail during a live demo.
+every additional moving part is a part that can fail during a live demo. The status page polls the
+Lambda's read-only `GET /status`; its `GET /health` row count is what's on camera during the node kill.
 
 ### Components — the boundaries the test suite enforces
 
@@ -84,8 +102,8 @@ would rot the first time someone renamed a function.
 | Layer | Table | What it holds | Written by |
 |---|---|---|---|
 | **Episodic** | `incidents` | Every incident ever, resolved or in-flight, with embeddings | ingest + close path |
-| **Semantic** | `runbooks` | Distilled how-to knowledge, independent of any one incident | seed (nightly consolidation as stretch) |
-| **Working** | `working_state` | What the agent believes about the *active* incident — retrieved matches, proposed diagnosis, confidence | the agent, via one tool |
+| **Semantic** | `runbooks` | Distilled how-to knowledge, independent of any one incident | seed loader |
+| **Working** | `working_state` | What the agent believes about the *active* incident — retrieved matches, proposed diagnosis, confidence | the agent loop |
 
 Schema: [`infra/schema.sql`](infra/schema.sql). Retrieval is a service-scoped `<->` vector query with a
 decay re-rank in Python (`score = (1 − norm_distance) · exp(−age_days / half_life)`), so the ranking
@@ -105,13 +123,14 @@ adds a fifth.
 | `write_incident` | close + write back the fix | blameless scrub first: names, @handles, emails never persist |
 
 **Propose-only:** the agent never executes fixes. **Confidence honesty:** at `none` it says "no close
-match in memory" and stops — zero invented incident IDs, enforced by tests.
+match in memory" and stops — zero invented incident IDs, enforced by tests. An uncited diagnosis is
+only accepted on that honesty branch; anywhere else the write path refuses it.
 
 ## Why CockroachDB
 
 | The demo needs | CockroachDB delivers |
 |---|---|
-| Memory that survives infrastructure failure | Distributed, replicated SQL — kill 1 of 3 nodes mid-diagnosis, zero committed rows lost |
+| Memory that survives infrastructure failure | Distributed, replicated SQL — kill 1 of 3 nodes mid-diagnosis, zero committed rows lost (rig rehearsed: [`infra/chaos/`](infra/chaos/index.md)) |
 | Semantic search over incidents | Native `VECTOR` type + distributed vector index (C-SPANN), scoped per service by a prefix column |
 | "What did memory believe at 02:14?" | `AS OF SYSTEM TIME` time-travel reads |
 | A boring, auditable data path | Postgres wire protocol — plain parameterized SQL via psycopg 3, no ORM |
@@ -120,11 +139,11 @@ match in memory" and stops — zero invented incident IDs, enforced by tests.
 
 | Layer | Pick | Why |
 |---|---|---|
-| Agent | Claude on **AWS Bedrock** (Converse API), custom ~50-line loop | full control of the 4-tool manifest; confidence branching stays visible |
-| Embeddings | Bedrock Titan | same platform, same credential, no second vendor |
-| Ingest | **AWS Lambda** + Function URL | one URL, zero gateway config, fewest moving parts on demo day |
-| Database | **CockroachDB Cloud** + distributed vector index | see table above — it *is* the thesis |
-| Frontend | one static HTML page, vanilla JS | the audience is a camera; build risk ≈ 0 |
+| Agent | Claude on **AWS Bedrock** (Converse API), custom loop in [`lambda/agent.py`](lambda/agent.py) | full control of the 4-tool manifest; confidence branching stays visible; invented IDs bounce off the write path |
+| Embeddings | Bedrock Titan V2, 1024-d, `normalize:true` always | same platform, same credential, no second vendor; unit vectors keep `<->` metric-safe |
+| Ingest | **AWS Lambda** + Function URL (POST ingest, GET `/status` + `/health`) | one URL, zero gateway config, fewest moving parts on demo day |
+| Database | **CockroachDB** + distributed vector index | see table above — it *is* the thesis |
+| Frontend | one static HTML page, vanilla JS ([`status_page/`](status_page/index.md)) | the audience is a camera; build risk ≈ 0 |
 | Tooling | Python 3.12 · uv · psycopg 3 · pydantic · pytest · ruff | boring wins; every pick documented in [`docs/04`](docs/04-tech-stack.md) |
 
 ## Quickstart
@@ -132,31 +151,47 @@ match in memory" and stops — zero invented incident IDs, enforced by tests.
 ```bash
 git clone https://github.com/santapong/ReCall.git && cd ReCall
 uv sync                      # deps — uv provisions Python 3.12 itself
-uv run pytest                # fast suite: structural + unit tests, all green
-make help                    # every workflow: probe, migrate, seed, deploy…
+uv run pytest                # fast suite; DB-backed tests skip without a cluster
+make help                    # every workflow: probe, migrate, seed, chaos-up, deploy…
 ```
 
-With a CockroachDB cluster (free tier works — `cp .env.example .env` and fill it in):
+With any CockroachDB — Cloud free tier or a local single-node
+(`cockroach start-single-node --insecure`) — set `CRDB_CONN_STRING`
+(`cp .env.example .env`), then:
 
 ```bash
-make probe                   # P0: DDL + 5 rows + one `<->` vector query, then cleans up
+make probe                   # DDL + 5 rows + one `<->` vector query, then cleans up
 make migrate                 # apply infra/migrations/*.sql in order
+uv run pytest                # now 50/50 — the DB-backed tests run for real
+```
+
+The AC7 resilience rig (needs Docker):
+
+```bash
+make chaos-up                # 3-node local cluster, vector index flag enabled
+docker stop recall-crdb-2    # the kill — survivors keep serving
+make chaos-down              # stop and wipe
 ```
 
 ## Roadmap
 
 Gate-exited phases. The 13 acceptance criteria live in
 [`docs/01-objective-roadmap.md`](docs/01-objective-roadmap.md); the live calendar is
-[`docs/08-final-sprint.md`](docs/08-final-sprint.md).
+[`docs/08-final-sprint.md`](docs/08-final-sprint.md); the video script is
+[`docs/09-demo-script.md`](docs/09-demo-script.md).
 
 | Phase | Window | Exit criterion | |
 |---|---|---|---|
-| **P0 · Probe** | Aug 2 | live cluster + vector query + Bedrock access requested | 🟡 in progress |
-| **P1 · Memory foundation** | Aug 3–7 | planted incident retrieved top-3 from CLI; 80-postmortem corpus | 🟡 corpus + retrieval logic done, awaiting a cluster |
-| **P2 · Agent loop** | Aug 8–12 | `curl` an alert → diagnosis citing a real incident + runbook | ⚪ |
-| **P3 · Surface** | Aug 13–14 | live status page; demo script ≤3 min | ⚪ |
-| **P4 · Resilience** | Aug 15–16 | node-kill rehearsal recorded, zero row loss verified | ⚪ |
+| **P0 · Probe** | Aug 2–4 | live cluster + vector query + Bedrock access requested | 🟡 local probe passed (flag-then-works); Cloud half awaits credentials |
+| **P1 · Memory foundation** | Aug 3–7 | planted incident retrieved top-3 from CLI; 80-postmortem corpus | 🟡 code + loader + eval harness done; embedding pass awaits Bedrock |
+| **P2 · Agent loop** | Aug 8–12 | `curl` an alert → diagnosis citing a real incident + runbook | 🟡 loop, prompt, handler built + offline-tested; first live run awaits credentials |
+| **P3 · Surface** | Aug 13–14 | live status page; demo script ≤3 min | 🟡 page + script v1 built; goes live with the Lambda |
+| **P4 · Resilience** | Aug 15–16 | node-kill rehearsal recorded, zero row loss verified | 🟡 rig built, kill rehearsed mechanically; recorded take remains |
 | **P5 · Ship** | Aug 17–18 | video ≤3:00 up; Devpost submission confirmed | ⚪ |
+
+**After the hackathon** — deliberately parked until submission ([`docs/01`](docs/01-objective-roadmap.md)
+scope discipline): nightly memory consolidation (episodic → semantic), live Slack ingest,
+region-level chaos, Agent Skills diagnostics. The parked list is the feature backlog, not a graveyard.
 
 ## Development
 
@@ -169,8 +204,8 @@ possible.
   folder = one venv.
 - **Enforced boundaries**: `agent.py` contains zero SQL; `tools.py` is the only module that writes;
   the 4-tool manifest is exactly 4 — all asserted by [`tests/`](tests/index.md), not by review vibes.
-- **Testing**: pytest is ground truth. The retrieval eval (P1) is a reproducible 20-alert benchmark
-  with pinned expected IDs — ≥18/20 top-3 or the gate doesn't exit. DB tests run against a real
+- **Testing**: pytest is ground truth. The retrieval eval is a reproducible 20-alert benchmark with
+  pinned expected IDs — ≥18/20 top-3 or the gate doesn't exit. DB tests run against a real
   single-node CockroachDB; mocked-DB tests are banned.
 - **Docs**: [`CLAUDE.md`](CLAUDE.md) is the agent-facing index with eight hard rules; every folder
   ships an `index.md`. Navigate by index — never bulk-load the repo to orient.
