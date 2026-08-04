@@ -124,7 +124,7 @@ The agent's system prompt (versioned in `prompts/`) hard-requires: state the con
 1. Alert POSTs to Function URL → dedupe on `external_id` → insert `incidents` + `working_state`, invoke agent — **AC1**
 2. Agent → `search_incidents` — **AC2, AC13**
 3. Agent → `propose_diagnosis` with validated citations — **AC3, AC4**
-4. Status page polls `working_state` — surface only
+4. Status page polls `GET /status` (Lambda read path over `working_state` + `incidents`) — surface only
 5. Close → `write_incident` → scrub → embed → persist — **AC5**, and the next similar alert finds it
 
 ## Seed data spec (P1)

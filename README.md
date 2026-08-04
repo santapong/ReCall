@@ -13,8 +13,8 @@
 
 **CockroachDB × AWS hackathon entry** · built solo, in the open · submission target **Aug 17, 2026**
 
-[Objective & vision](#objective--vision) ·
-[The five W's](#what-why-who-when-how) ·
+[The problem](#the-problem) ·
+[Who it's for](#who-its-for) ·
 [How it works](#how-it-works) ·
 [Architecture](#architecture) ·
 [Memory design](#memory-design--three-layers) ·
@@ -33,27 +33,28 @@
 > gate. 50 tests green, DB-backed ones running against a real local CockroachDB.
 > Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
 
-## Objective & vision
+## The problem
 
-**Objective** (from [`docs/01`](docs/01-objective-roadmap.md)): submit a complete, judged-ready
-entry by **Aug 15, 2026, 5 pm EDT** — 72 hours early — passing all 13 acceptance criteria and every
-competition hard requirement, within a 60-hour solo build budget. Winning is upside, not the
-objective; no one controls judges.
+Tribal on-call knowledge lives in senior engineers' heads and rots in unread postmortems. When they
+leave, it evaporates — and the next 2 a.m. incident gets diagnosed from zero, again. The knowledge
+isn't missing; it's unreachable at the moment it matters.
 
-**Vision**: tribal on-call knowledge lives in senior engineers' heads and rots in unread
-postmortems. Recall makes institutional incident memory **durable, queryable, and agent-native** —
-every resolved incident makes the next one faster. And because that memory lives in CockroachDB,
-it survives the very outages it's helping diagnose.
+**Recall makes institutional incident memory durable, queryable, and agent-native.** An alert comes
+in; the agent retrieves the closest past incidents from a distributed vector index, proposes a
+diagnosis grounded in the real resolution that worked last time — citing real incident IDs and a
+real runbook step — and writes the fix back on close. Every resolved incident makes the next one
+faster. And because that memory lives in CockroachDB, it survives the very outages it's helping
+diagnose.
 
-## What, why, who, when, how
+## Who it's for
 
-| | |
-|---|---|
-| **What** | An on-call incident copilot: alert in → grounded diagnosis out, citing the real past incident and the real runbook step that fixed it last time — with the resolution written back on close so memory compounds. |
-| **Why** | Every team re-diagnoses the same 2 a.m. incidents from zero after the one engineer who remembered leaves. Postmortems exist but nobody reads them mid-incident. The knowledge isn't missing — it's unreachable at the moment it matters. |
-| **Who** | **On-call engineers** (the diagnosis reaches them seconds after the page), **SRE/platform teams** (institutional memory stops depending on tenure), **engineering leaders** (postmortems become an asset with compounding returns), and — for this hackathon build — **judges** evaluating agentic memory design on CockroachDB + AWS. |
-| **When** | At alert time (retrieval + diagnosis in seconds), at close time (write-back), and at postmortem time (`AS OF SYSTEM TIME` shows exactly what memory believed mid-incident). |
-| **How** | Alert → Lambda → Claude on Bedrock driving a **closed 4-tool memory surface** → distributed vector search over past incidents in CockroachDB → propose-only diagnosis with validated citations → blameless scrubbed write-back. One Lambda, one database, one static page. |
+- **On-call engineers** — the diagnosis reaches them seconds after the page, grounded in what
+  actually fixed this failure before, with an honest confidence label instead of a confident guess.
+- **SRE and platform teams** — institutional memory stops depending on who happens to still be on
+  the team; the blameless scrubber keeps names out of the record by construction.
+- **Engineering leaders** — postmortems become an asset with compounding returns rather than
+  write-only documents, and `AS OF SYSTEM TIME` gives audits exactly what memory believed
+  mid-incident.
 
 ## How it works
 

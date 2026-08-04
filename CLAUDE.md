@@ -35,26 +35,28 @@ Top-level folder indexes (read the folder's `index.md` before working in it): `.
 7. **Behind schedule cuts scope, never the date.** Cut order: UI polish → seed volume → tool breadth. Never cut: chaos demo, write-back, video, on-time submit. Target submit **Aug 17 night ICT**; hard wall **Aug 19, 04:00 ICT** (= Aug 18, 5 pm EDT) — `docs/08`.
 8. **Index or it doesn't exist.** Every new folder or subsystem ships an `index.md` (template in `docs/06`) and registers in its parent index — and in this read-order table if it's top-level — in the same commit. Navigate by index; never bulk-load the repo to orient. *Amended 2026-08-02*: **asset-only folders** (`docs/diagrams/` — SVG and nothing else) carry no `index.md`; the parent index describes every file instead. The rule's purpose is that nothing is undiscoverable, and a one-format asset folder is better served by one table upstream than by a stub file inside it.
 
-## Current state
+## Current state (2026-08-04)
 
-- Phase: **P0** — the probe (cluster + DDL + one vector query + headless-MCP check + Bedrock access request) gates everything. `make probe` + `scripts/probe_bedrock.py` are ready for it. **Schedule is now `docs/08`: 16 days to the wall; weekends Aug 8–9 and Aug 15–16 carry the load.**
-- Repo scaffolded Jul 8 from the handoff pack: layout per `docs/05`, branch/worktree model live in `docs/07` (run `make branches-init` once after the setup PR merges), CI fast suite on PRs, structural tests green (AC4 manifest, module boundaries, retry pattern).
-- P1 partially pre-banked (Aug 1): the Orbital corpus, the blameless scrubber, and the 20 AC2 eval pairs already exist — `docs/08`'s "implement `generate.py` (~3 h)" line item is done.
-- Open decision markers: **D2 (runtime DB path) is closed — Branch B, psycopg hot path with MCP as the dev/ops surface (`docs/08`).** One marker remains: embedding dimension, expected `1024`, resolved in-file the day `probe_bedrock.py` prints it.
-- Source artifacts (charter HTML v1, council report, pitch panel, original design doc) belong in `docs/plans/` — the human drops them in; this pack is the operational consolidation of all four as of Jul 8; where they disagree, this pack wins.
+- **All application code is built and offline-verified; cloud credentials are the only gate.** The 4-tool surface (read + write), the Converse loop, ingest + `GET /status`/`/health`, the status page, the seed loader (`infra/seed/load.py`), the AC2 eval harness, and the AC7 chaos rig (`infra/chaos/`, kill rehearsed) all exist. Suite: 50 green; DB-backed tests run against a real local single-node (v25.2.2, user-space install; probe answer: vector index = flag-then-works, recorded in `docs/02`).
+- Still awaiting the human: CockroachDB Cloud cluster + MCP service-account key, AWS keys + Bedrock model-access grant (`scripts/probe_runbook.md` steps A–C). Then, in order: Cloud probe/migrate → `probe_bedrock.py` → `load.py` → tune the two thresholds → AC2 eval → `make deploy` → live end-to-end.
+- One open decision marker: embedding dimension, expected `1024`, resolved in-file the day `probe_bedrock.py` prints it. D1–D4 are otherwise closed (`docs/08`).
+- Source artifacts (charter HTML v1, council report, pitch panel, original design doc) belong in `docs/plans/` — the human drops them in; where they disagree with this pack, this pack wins.
 
 ## Commands
 
 Keep this section updated as commands land:
 
 ```
-uv sync                 # deps — works now
-uv run pytest           # structural tests now; AC2 eval joins at P1
-uv run ruff check .     # lint — works now (make lint / make fmt)
-make probe              # P0: vector probe against your cluster (needs CRDB_CONN_STRING)
+uv sync                 # deps
+uv run pytest           # 50 tests; DB-backed ones need CRDB_CONN_STRING (local node)
+uv run ruff check .     # lint (make lint / make fmt)
+make probe              # vector probe against your cluster (needs CRDB_CONN_STRING)
 make migrate            # apply infra/migrations/*.sql in order
-uv run python infra/seed/generate.py   # regenerate corpus + eval fixtures (make seed) — works now
-make deploy             # P2 — zip + update Lambda (see 05-code-patterns)
+uv run python infra/seed/generate.py   # regenerate corpus + eval fixtures (make seed)
+uv run python infra/seed/load.py       # embed + upsert the corpus (needs Bedrock creds)
+uv run pytest tests/retrieval_eval.py -s   # AC2 eval — runs once corpus is embedded
+make chaos-up / chaos-down             # AC7 3-node kill rig (Docker)
+make deploy             # bundle deps + prompts + code, update the Lambda
 scripts/wt.sh new feature/<slug>       # branch + worktree per docs/07
 ```
 
