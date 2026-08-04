@@ -87,6 +87,8 @@ Probe note: some mid-2025 sources show vector indexing behind `SET CLUSTER SETTI
 
 Pre-probe research (Jul 8, sources in `scripts/probe_runbook.md`): flag confirmed for v25.2+ (C-SPANN, public preview; non-empty tables also need `sql_safe_updates = false` to backfill); **Basic-tier vector-index support is at risk** — test `CREATE VECTOR INDEX` first and use the runbook's fallback tree if blocked; managed MCP documents service-account API keys for headless auth (Branch A becomes possible; Branch B stays the recommended demo shape). Both `DECISION PENDING PROBE` markers remain open until the live cluster answers.
 
+Probe result — **self-hosted** (Aug 4, local single-node v25.2.2, `~/.local/bin/cockroach`, insecure dev node, store `~/.local/share/recall-crdb`): `CREATE VECTOR INDEX` fails until `SET CLUSTER SETTING feature.vector_index.enabled = true`, then the full probe (DDL + index + 5 rows + `<->` top-3) passes → **flag required, works once set**. Any self-hosted rig (including the AC7 3-node chaos rig) must set this flag at cluster init. The **Cloud Basic-tier** answer is still open — runbook step A on cockroachlabs.cloud remains human-side, and the embedding-dimension `DECISION PENDING PROBE` marker stays open until the Bedrock probe answers (the runtime-DB-path marker was resolved 2026-08-02 as Branch B).
+
 ## The 4-tool contract (AC4 — this list is closed)
 
 ```
