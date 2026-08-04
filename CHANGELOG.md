@@ -63,6 +63,24 @@ DB-backed tests running against a real local single-node CockroachDB per the no-
   reframed as the post-hackathon backlog.
 - Decision: **database strategy = both** — CockroachDB Cloud as the demo/primary target, the local
   single-node for development. The AC7 rig stays local regardless (free tier has no killable nodes).
+### 2026-08-03 — branch model rewritten
+
+#### Changed
+- **`dev` → `develop`**, and `main` is now **release-only**: it receives merges from `release/*` or
+  `hotfix/*` exclusively, and every merge is tagged. `develop` is the integration line and the
+  default base for all work.
+- **The permanent `test` branch is retired**, replaced by short-lived `release/<name>` candidates
+  that run the full suite, the AC2 eval and the chaos rehearsal, then merge to `main` and delete.
+  Two reasons: git cannot hold a `test` branch and a `test/*` prefix simultaneously (`refs/heads/test`
+  is a file, so `refs/heads/test/foo` cannot be created — verified against a scratch repo), and a
+  permanent gate branch holds no state worth keeping while being free to drift behind `develop`.
+- `feature/*` → `feat/*` (matches the `feat(scope):` commit vocabulary), `spike/*` → `experiment/*`.
+- Added `test/*`, `docs/*` and `chore/*` prefixes so non-production work stops being filed as
+  features.
+- CI now triggers on `main`, `develop` and `release/**`; the full suite attaches to `release/**`
+  in P1 rather than to a permanent branch.
+- `scripts/wt.sh`, `scripts/branches_init.sh`, the `start-work` skill, the Makefile and the README
+  all updated to the new vocabulary in the same commit.
 
 ### 2026-08-02 — architecture diagrams, sprint plan, memory core · tagged `w1`
 

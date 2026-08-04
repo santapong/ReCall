@@ -212,10 +212,11 @@ region-level chaos, Agent Skills diagnostics. The parked list is the feature bac
 The repo is built to be driven by both a human and coding agents — conventions are executable where
 possible.
 
-- **Branching** ([`docs/07`](docs/07-branching-worktrees.md)): `feature/* → dev → test → main`, weekly
-  runnable tags `w1`…`w6` on `main`; `spike/*` for experiments, `hotfix/*` for demo-day emergencies.
-  Parallel work happens in **git worktrees** (`scripts/wt.sh new feature/<slug>`), one branch = one
-  folder = one venv.
+- **Branching** ([`docs/07`](docs/07-branching-worktrees.md)): `feat/* → develop → release/* → main`,
+  where `main` is release-only and every merge into it is tagged (`w1`…`w6`, the runnable-increment
+  KPI). Short-lived branches are named for intent — `feat/` `fix/` `test/` `docs/` `chore/`
+  `experiment/` `hotfix/` — so the history reads honestly. Parallel work happens in **git worktrees**
+  (`scripts/wt.sh new feat/<slug>`), one branch = one folder = one venv.
 - **Enforced boundaries**: `agent.py` contains zero SQL; `tools.py` is the only module that writes;
   the 4-tool manifest is exactly 4 — all asserted by [`tests/`](tests/index.md), not by review vibes.
 - **Testing**: pytest is ground truth. The retrieval eval is a reproducible 20-alert benchmark with

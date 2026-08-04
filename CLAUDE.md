@@ -57,7 +57,7 @@ uv run python infra/seed/load.py       # embed + upsert the corpus (needs Bedroc
 uv run pytest tests/retrieval_eval.py -s   # AC2 eval — runs once corpus is embedded
 make chaos-up / chaos-down             # AC7 3-node kill rig (Docker)
 make deploy             # bundle deps + prompts + code, update the Lambda
-scripts/wt.sh new feature/<slug>       # branch + worktree per docs/07
+scripts/wt.sh new feat/<slug>          # branch + worktree per docs/07 (base: develop)
 ```
 
 Harness skills (docs/06–07 as machinery, see `.claude/index.md`): `/session-loop` · `/start-work` · `/verify` · `/record` · `/gate-check`. SessionStart hook injects orientation; the Stop hook enforces "never end a session red".
