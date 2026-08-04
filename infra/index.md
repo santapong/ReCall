@@ -6,6 +6,7 @@ Schema truth and the deterministic seed corpus. Applied by `make migrate` / gene
 | `schema.sql` | Canonical full DDL — the single source of schema truth | Before any schema thought |
 | `migrations/` | Numbered `.sql`, applied in order by `make migrate` | When changing schema |
 | `seed/` | Orbital corpus generator (P1) — see `seed/index.md` | At P1, before seeding |
+| `chaos/` | AC7 kill rig: 3-node compose, `make chaos-up`/`chaos-down` — see `chaos/index.md` | P4 rehearsal |
 
 ## Invariants
 - Schema changes update `schema.sql` AND add a numbered migration in the same commit.

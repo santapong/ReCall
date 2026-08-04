@@ -4,7 +4,7 @@ SHELL := /bin/bash
 FUNCTION_NAME ?= recall-ingest
 .DEFAULT_GOAL := help
 
-.PHONY: help sync test lint fmt probe migrate seed deploy branches-init
+.PHONY: help sync test lint fmt probe migrate seed deploy branches-init chaos-up chaos-down
 
 help:
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -39,3 +39,13 @@ deploy: ## zip lambda/ + update the function (P2 wires dependency bundling)
 
 branches-init: ## one-time: create + push dev and test from origin/main (docs/07)
 	bash scripts/branches_init.sh
+
+chaos-up: ## AC7 rig: start + init the 3-node cluster, enable the vector-index flag
+	docker compose -f infra/chaos/docker-compose.yml up -d
+	@sleep 2; docker exec recall-crdb-1 cockroach init --insecure 2>/dev/null || true
+	@sleep 2; docker exec recall-crdb-1 cockroach sql --insecure \
+		-e "SET CLUSTER SETTING feature.vector_index.enabled = true;"
+	@echo "rig up: postgresql://root@localhost:26260/defaultdb?sslmode=disable (kill = docker stop recall-crdb-2)"
+
+chaos-down: ## stop the AC7 rig and wipe its volumes
+	docker compose -f infra/chaos/docker-compose.yml down -v

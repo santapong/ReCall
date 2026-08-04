@@ -1,0 +1,34 @@
+# AC7 chaos rig — 3-node local cluster the node-kill demo runs against (docs/08 P4, D3).
+# Version pinned to the dev single-node (v25.2.2) so behavior never drifts between rigs.
+#
+#   make chaos-up      start + init + enable the vector-index flag (docs/02 probe result)
+#   docker stop recall-crdb-2      # the kill, mid-diagnosis, on camera
+#   make chaos-down    stop and wipe
+#
+# SQL entry point: postgresql://root@localhost:26260/defaultdb?sslmode=disable
+# (26260-26262 host-side, so the rig coexists with the dev node on 26257.)
+
+services:
+  crdb-1:
+    image: cockroachdb/cockroach:v25.2.2
+    container_name: recall-crdb-1
+    command: start --insecure --join=crdb-1,crdb-2,crdb-3 --advertise-addr=crdb-1
+    ports: ["26260:26257", "8091:8080"]
+    volumes: ["crdb1:/cockroach/cockroach-data"]
+  crdb-2:
+    image: cockroachdb/cockroach:v25.2.2
+    container_name: recall-crdb-2
+    command: start --insecure --join=crdb-1,crdb-2,crdb-3 --advertise-addr=crdb-2
+    ports: ["26261:26257"]
+    volumes: ["crdb2:/cockroach/cockroach-data"]
+  crdb-3:
+    image: cockroachdb/cockroach:v25.2.2
+    container_name: recall-crdb-3
+    command: start --insecure --join=crdb-1,crdb-2,crdb-3 --advertise-addr=crdb-3
+    ports: ["26262:26257"]
+    volumes: ["crdb3:/cockroach/cockroach-data"]
+
+volumes:
+  crdb1:
+  crdb2:
+  crdb3:
