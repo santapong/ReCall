@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 import db
 from embed import embed, to_vector_literal
+from scrub import scrub
 
 # Confidence thresholds (AC13): tuned once in P1 against the seeded corpus, then
 # frozen — changing them later requires rerunning the full AC2 eval in the same
@@ -187,19 +188,139 @@ def get_runbook(runbook_id: str) -> Runbook:
     return Runbook(id=str(row[0]), service=row[1], title=row[2], content=row[3])
 
 
+_INSERT_INCIDENT_SQL = """
+    INSERT INTO incidents (external_id, service, title, description, severity)
+    VALUES (%(external_id)s, %(service)s, %(title)s, %(description)s, %(severity)s)
+    ON CONFLICT (external_id) DO UPDATE SET external_id = excluded.external_id
+    RETURNING id
+"""
+
+_INSERT_WORKING_STATE_SQL = """
+    INSERT INTO working_state (incident_id) VALUES (%(incident_id)s)
+    ON CONFLICT (incident_id) DO NOTHING
+"""
+
+_RECORD_RETRIEVAL_SQL = """
+    INSERT INTO working_state (incident_id, retrieved_matches, confidence, updated_at)
+    VALUES (%(incident_id)s, %(matches)s, %(confidence)s, now())
+    ON CONFLICT (incident_id) DO UPDATE
+        SET retrieved_matches = excluded.retrieved_matches,
+            confidence = excluded.confidence,
+            updated_at = now()
+"""
+
+_CONFIDENCE_SQL = """
+    SELECT i.id, ws.confidence
+    FROM incidents i LEFT JOIN working_state ws ON ws.incident_id = i.id
+    WHERE i.id = %(id)s
+"""
+
+_CITED_IDS_SQL = "SELECT id FROM incidents WHERE id = ANY(%(ids)s)"
+
+_PROPOSE_SQL = """
+    INSERT INTO working_state (incident_id, proposed_diagnosis, updated_at)
+    VALUES (%(incident_id)s, %(diagnosis)s, now())
+    ON CONFLICT (incident_id) DO UPDATE
+        SET proposed_diagnosis = excluded.proposed_diagnosis, updated_at = now()
+"""
+
+_CLOSE_SQL = """
+    UPDATE incidents
+    SET resolution_summary = %(summary)s, status = 'resolved', resolved_at = now(),
+        embedding = %(vec)s::VECTOR, blame_scrubbed = true
+    WHERE id = %(id)s
+    RETURNING id
+"""
+
+
+def insert_incident(external_id: str, service: str, title: str, description: str,
+                    severity: str) -> str:
+    """Ingest-side write (non-manifest — the agent never sees this; AC4 stays at 4).
+
+    Idempotent on external_id (AC1): the same alert twice returns the same row. Also
+    seeds the working_state row so the agent loop always has one to update.
+    """
+    params = {"external_id": external_id, "service": service, "title": title,
+              "description": description, "severity": severity}
+
+    def _write():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_INSERT_INCIDENT_SQL, params)
+            incident_id = str(cur.fetchone()[0])
+            cur.execute(_INSERT_WORKING_STATE_SQL, {"incident_id": incident_id})
+        return incident_id
+
+    return db.with_retry(_write)
+
+
+def record_retrieval(incident_id: str, result: SearchResult) -> None:
+    """Persist what the agent retrieved (non-manifest — called by the loop, not the
+    model). working_state.confidence written here is what lets propose_diagnosis
+    enforce AC3's cite-or-be-none rule, and AC11's time-travel query reads this row.
+    """
+    params = {
+        "incident_id": incident_id,
+        "matches": result.model_dump_json(include={"matches", "runbook_ids"}),
+        "confidence": result.confidence,
+    }
+    def _write():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_RECORD_RETRIEVAL_SQL, params)
+
+    db.with_retry(_write)
+
+
 def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list[str]) -> None:
     """Write working_state ONLY. cited_incident_ids must be non-empty unless
     confidence == 'none' (AC3). Every ID is validated against the DB before the
     write — an unknown ID raises and never persists.
     """
-    raise NotImplementedError("P2 — agent loop (docs/08 schedule)")
+
+    def _check():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_CONFIDENCE_SQL, {"id": incident_id})
+            row = cur.fetchone()
+            if row is None:
+                raise LookupError(f"no incident with id {incident_id!r}")
+            confidence = row[1]
+            if cited_incident_ids:
+                cur.execute(_CITED_IDS_SQL, {"ids": list(cited_incident_ids)})
+                known = {str(r[0]) for r in cur.fetchall()}
+                unknown = [c for c in cited_incident_ids if c not in known]
+                if unknown:
+                    raise LookupError(
+                        f"diagnosis cites unknown incident ids {unknown} — refusing to "
+                        "persist an invented citation (AC3)"
+                    )
+            elif confidence != "none":
+                raise ValueError(
+                    "cited_incident_ids is empty but confidence is "
+                    f"{confidence!r} — a diagnosis without citations is only legal "
+                    "on the honesty branch (AC3/AC13)"
+                )
+            cur.execute(_PROPOSE_SQL, {"incident_id": incident_id, "diagnosis": diagnosis})
+
+    db.with_retry(_check)
 
 
 def write_incident(incident_id: str, resolution_summary: str) -> None:
     """Close path: blameless scrub (lambda/scrub.py) → embed the resolution →
     persist, so the very next similar alert can retrieve it (AC5).
     """
-    raise NotImplementedError("P2 — agent loop (docs/08 schedule)")
+    scrubbed = scrub(resolution_summary)
+    vector = to_vector_literal(embed(scrubbed))  # embed outside the retry: not a DB error
+
+    def _write():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_CLOSE_SQL, {"summary": scrubbed, "vec": vector, "id": incident_id})
+            if cur.fetchone() is None:
+                raise LookupError(f"no incident with id {incident_id!r}")
+
+    db.with_retry(_write)
 
 
 # AC4: the closed manifest. tests/test_manifest.py asserts exactly these 4 names.
