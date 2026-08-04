@@ -71,7 +71,7 @@ Nothing is lost: the full suite, the AC2 eval and the chaos rehearsal are the sa
 ## CI mapping
 
 - **Fast suite** — `ruff check` + `pytest` (structural + unit, no DB). Runs on every PR and on pushes to `main` / `develop` / `release/**`. Wired in `.github/workflows/ci.yml`.
-- **Full suite** — fast suite + single-node cockroach service + the AC2 eval. Added to `release/**` pushes in P1, when the first DB-backed test exists. Mocked-DB tests stay banned (`docs/05`).
+- **Full suite** — fast suite + a real single-node cockroach (v25.2.2, same as the rigs, vector-index flag set) + every DB-backed test. Wired 2026-08-04 (`.github/workflows/ci.yml`, `full` job): runs on pushes to `develop` and `release/**`. The AC2 eval joins it once the corpus is embedded (it needs Bedrock and skips with the reason until then). Mocked-DB tests stay banned (`docs/05`).
 - Recommended GitHub settings (manual, one-time): protect `main` — require a PR and green checks; on `develop` require green checks only. Set `develop` as the default base for new PRs.
 
 ## Bootstrap — once

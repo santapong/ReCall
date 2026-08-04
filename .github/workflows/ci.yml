@@ -1,6 +1,7 @@
-# Fast suite on every PR and on the long-lived branches (docs/07 CI mapping).
-# The full suite (single-node cockroach service + AC2 eval) is added to pushes on
-# `release/**` in P1, when the first DB-backed test exists — mocked-DB tests stay banned.
+# Fast suite on every PR and on the long-lived branches; full suite (real single-node
+# cockroach, all DB-backed tests) on develop and release/** pushes — mocked-DB tests
+# stay banned (docs/05), so the full job runs against the same engine the demo uses,
+# with the same vector-index flag the probe discovered (docs/02).
 name: ci
 
 on:
@@ -17,3 +18,27 @@ jobs:
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run pytest -q
+
+  full:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/'))
+    runs-on: ubuntu-latest
+    env:
+      CRDB_CONN_STRING: postgresql://root@localhost:26257/defaultdb?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - name: Start single-node CockroachDB (same version as the rigs)
+        run: |
+          docker run -d --name crdb -p 26257:26257 \
+            cockroachdb/cockroach:v25.2.2 start-single-node --insecure
+          for i in $(seq 1 30); do
+            docker exec crdb cockroach sql --insecure -e 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec crdb cockroach sql --insecure \
+            -e 'SET CLUSTER SETTING feature.vector_index.enabled = true;'
+      - name: Migrate
+        run: make migrate
+      - name: Full suite (DB-backed tests included)
+        run: uv run pytest -q

@@ -14,7 +14,7 @@
 -- Pairs with AS OF SYSTEM TIME: working_state answers "what did memory believe at 02:14",
 -- agent_runs answers "and what did it do to get there, at what cost".
 
-CREATE TABLE agent_runs (
+CREATE TABLE IF NOT EXISTS agent_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id UUID NOT NULL,             -- one agent invocation; groups its steps
     incident_id UUID NOT NULL REFERENCES incidents(id),
@@ -33,5 +33,5 @@ CREATE TABLE agent_runs (
 );
 
 -- The two reads that matter: replay one run in order, and pull an incident's full history.
-CREATE INDEX idx_agent_runs_run ON agent_runs (run_id, seq);
-CREATE INDEX idx_agent_runs_incident ON agent_runs (incident_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_run ON agent_runs (run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_incident ON agent_runs (incident_id, created_at DESC);
