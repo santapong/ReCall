@@ -1,0 +1,116 @@
+{
+  "_comment": "Real public post-incident reports, one service ('public'), used for one demo shot only (review 2026-08-04). Facts extracted from the cited primary sources on 2026-08-04; AC2's pinned eval set is untouched by this track. Summaries are blameless by construction — systems and symptoms, never people.",
+  "incidents": [
+    {
+      "external_id": "PIR-CLOUDFLARE-2019-07",
+      "service": "public",
+      "title": "Global 502 errors — CPU exhausted on every edge server",
+      "description": "502 error pages on all proxied domains worldwide; roughly 80% of traffic dropped for 27 minutes. Every server handling HTTP/HTTPS traffic pinned at 100% CPU.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: a newly deployed WAF managed rule contained a regular expression subject to catastrophic backtracking in the PCRE engine, exhausting CPU globally; a CPU-usage protection mechanism had been removed earlier. Resolved by: disable the WAF globally (13:42→14:09 UTC), re-introduce CPU protection, audit all 3,868 WAF rules for backtracking, add performance profiling to the rule test suite, migrate to a regex engine with runtime guarantees (re2/Rust regex), and replace immediate global rule deployment with staged rollouts. Source: blog.cloudflare.com/details-of-the-cloudflare-outage-on-july-2-2019/",
+      "opened_at": "2019-07-02T13:42:00+00:00",
+      "resolved_at": "2019-07-02T14:09:00+00:00"
+    },
+    {
+      "external_id": "PIR-GITHUB-2018-10",
+      "service": "public",
+      "title": "Cross-region database divergence after 43-second network partition",
+      "description": "Stale and inconsistent data across the site for over 24 hours; webhooks and Pages builds unavailable; slow writes on cross-datacenter operations.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: routine network maintenance caused a 43-second East↔West connectivity loss; automated failover promoted West Coast MySQL primaries, and when connectivity returned both coasts had accepted writes — divergence made automatic failback unsafe. Resolved by: restore multiple terabytes from backup to the East Coast, resynchronise replicas in both regions, restore the original topology, then drain the backlog (5M+ webhook events, 80k Pages builds). Source: github.blog/2018-10-30-oct21-post-incident-analysis/",
+      "opened_at": "2018-10-21T22:52:00+00:00",
+      "resolved_at": "2018-10-22T23:03:00+00:00"
+    },
+    {
+      "external_id": "PIR-GITLAB-2017-01",
+      "service": "public",
+      "title": "Production database directory deleted during replication recovery",
+      "description": "Site unavailable for ~25 hours; ~300 GB production database directory removed on the primary while restoring a lagging secondary. Repositories and wikis intact but unreachable.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: during manual replication recovery under elevated spam load, a destructive cleanup command intended for the secondary was executed on the primary; all five backup mechanisms were later found unreliable or untested. Resolved by: restore from a 6-hour-old LVM snapshot, copy the staging database to production (~18 h), restore webhooks from a separate snapshot, advance ID sequences by 100,000 to prevent reuse, and re-enable services gradually. ~5,000 projects, 5,000 comments and 700 accounts from the gap were unrecoverable. Source: about.gitlab.com/blog/2017/02/10/postmortem-of-database-outage-of-january-31/",
+      "opened_at": "2017-01-31T17:20:00+00:00",
+      "resolved_at": "2017-02-01T18:00:00+00:00"
+    },
+    {
+      "external_id": "PIR-AWS-KINESIS-2020-11",
+      "service": "public",
+      "title": "Stream API errors cascading to auth, monitoring and serverless",
+      "description": "Errors putting and getting Kinesis records in us-east-1 for ~17 hours; cascading failures in Cognito auth, CloudWatch (alarms went INSUFFICIENT_DATA), Lambda, EventBridge, ECS/EKS.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: adding capacity to the front-end fleet pushed every server past the OS thread limit, so shard-map caches could not be built and requests could not be routed to back-end clusters. Resolved by: remove the added capacity, push configuration changes, restart the front-end fleet gradually (a few hundred servers per hour to avoid contention), and ship a Cognito change reducing its Kinesis dependency. Follow-ups: larger servers (fewer threads needed), thread-consumption alarms, raised OS limits, cellularised front-end fleet. Source: aws.amazon.com/message/11201/",
+      "opened_at": "2020-11-25T13:15:00+00:00",
+      "resolved_at": "2020-11-26T06:23:00+00:00"
+    },
+    {
+      "external_id": "PIR-FASTLY-2021-06",
+      "service": "public",
+      "title": "85% of global CDN returning errors after customer config change",
+      "description": "Errors from 85% of the network within minutes, affecting major sites worldwide; triggered at 09:47 UTC, 95% recovered by 10:36 UTC once the trigger was isolated.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: a latent software bug shipped in a May 12 deployment lay undetected until a customer applied a valid configuration that hit the triggering condition. Resolved by: identify the triggering customer configuration (10:27 UTC), disable it (10:36 UTC — 95% recovery), then create and roll out a permanent fix across the network the same day. Follow-up: close the QA gap that let the bug pass pre-deployment testing. Source: fastly.com/blog/summary-of-june-8-outage",
+      "opened_at": "2021-06-08T09:47:00+00:00",
+      "resolved_at": "2021-06-08T12:44:00+00:00"
+    },
+    {
+      "external_id": "PIR-SLACK-2021-01",
+      "service": "public",
+      "title": "Packet loss at network gateway under first-workday-of-year load",
+      "description": "Message send success dropped from 99.999% to 99%, then full unavailability at peak; degraded performance and elevated latency for ~3.5 hours.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: AWS Transit Gateways linking the VPCs saturated and dropped packets — post-holiday client cache refills on the first working Monday of the year outran TGW autoscaling. Resolved by: provider manually scaled TGW capacity across all AZs (complete 10:40 PST). Follow-ups: pre-scale TGWs before demand spikes, move the monitoring stack into the same VPC as its database to remove the TGW dependency, load-test the provision service, revisit health-check and autoscaling configuration. Source: slack.engineering/slacks-outage-on-january-4th-2021/",
+      "opened_at": "2021-01-04T15:00:00+00:00",
+      "resolved_at": "2021-01-04T18:40:00+00:00"
+    },
+    {
+      "external_id": "PIR-ROBLOX-2021-10",
+      "service": "public",
+      "title": "73-hour total outage — service-discovery store degraded under new streaming feature",
+      "description": "Player count fell to 50% of normal then cascaded to full outage for 73 hours; the orchestration and secrets layers could not function with the Consul cluster unhealthy.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause (two compounding): a newly enabled Consul streaming feature caused Go channel contention under mixed load, degrading KV writes from ~300 ms to ~2 s; and a BoltDB freelist pathology made every 16 KB log append write 7.8 MB. Resolved by: disable streaming everywhere, work around problematic leader elections, redeploy the caching layer after fixing KV inconsistencies, and restore players by DNS steering in 10% increments. Follow-ups: BoltDB compaction, migration to bbolt. Source: roblox return-to-service report (about.roblox.com/newsroom, Jan 2022)",
+      "opened_at": "2021-10-28T20:37:00+00:00",
+      "resolved_at": "2021-10-31T23:45:00+00:00"
+    },
+    {
+      "external_id": "PIR-AWS-USEAST1-2021-12",
+      "service": "public",
+      "title": "Internal network congestion — EC2/Console/Route 53 APIs degraded region-wide",
+      "description": "EC2 API errors and latency, console login failures, Route 53 changes blocked, CloudWatch delays, container API errors in us-east-1 for most of a day.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: an automated capacity-scaling activity triggered unexpected client behaviour on the internal network, a connection surge that congested the devices bridging the internal and main networks, cascading widely. Resolved by: disable the triggering automation, move internal DNS off congested paths (09:28 PST), isolate top talkers to dedicated devices, shed heavy internal traffic, add network capacity; latent client back-off bug fixed in a follow-up deployment. Source: aws.amazon.com/message/12721/",
+      "opened_at": "2021-12-07T15:30:00+00:00",
+      "resolved_at": "2021-12-08T02:40:00+00:00"
+    },
+    {
+      "external_id": "PIR-ATLASSIAN-2022-04",
+      "service": "public",
+      "title": "Cloud sites deleted by maintenance script — 775 customers dark, up to 14 days",
+      "description": "Jira, Confluence, Opsgenie, Statuspage and Access unavailable for 775 customers; restoration ran April 5–18, longest-affected customers out ~14 days.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: a maintenance script deleting a standalone app was run with the wrong identifiers — site IDs instead of app IDs — and the deletion API accepted both without validation or confirmation, hard-deleting 883 sites in 23 minutes. Resolved by: multi-week staged restoration of sites from backup (data loss capped at ~5 minutes). Follow-ups: soft-delete everywhere with staged rollout and tested rollback, automated multi-site disaster-recovery restoration, large-scale incident playbooks, and customer-contact backups independent of the product. Source: atlassian.com/blog/atlassian-engineering/post-incident-review-april-2022-outage",
+      "opened_at": "2022-04-05T07:38:00+00:00",
+      "resolved_at": "2022-04-18T00:00:00+00:00"
+    },
+    {
+      "external_id": "PIR-CLOUDFLARE-2023-11",
+      "service": "public",
+      "title": "Control plane and analytics down 36 hours after datacenter power cascade",
+      "description": "Dashboard and configuration APIs unavailable, analytics and logging down for ~36 hours; traffic serving continued but nothing could be reconfigured.",
+      "severity": "SEV-1",
+      "status": "resolved",
+      "resolution_summary": "Root cause: a full power cascade at a single colo facility (utility fault → generator shutdown via transformer ground fault → UPS exhausted in 4 minutes) exposed that core control-plane services (Kafka, ClickHouse) had undocumented hard dependencies on that one facility; newer products had never integrated with the high-availability clusters. Resolved by: fail over to other core facilities and manually recover the dependent services (04:25 UTC Nov 4). Follow-ups: remove single-datacenter dependencies for the control plane, mandate HA-cluster integration before GA, chaos-test full-facility loss. Source: blog.cloudflare.com/post-mortem-on-cloudflare-control-plane-and-analytics-outage/",
+      "opened_at": "2023-11-02T11:43:00+00:00",
+      "resolved_at": "2023-11-04T04:25:00+00:00"
+    }
+  ],
+  "runbooks": []
+}

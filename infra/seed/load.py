@@ -20,6 +20,9 @@ import db  # noqa: E402
 from embed import embed, to_vector_literal  # noqa: E402
 
 CORPUS = Path(__file__).resolve().parent / "corpus.json"
+# Real public post-incident reports (review 2026-08-04): one extra service ('public'),
+# one demo shot, AC2's pinned set untouched. Loaded after the Orbital corpus.
+PIR_CORPUS = Path(__file__).resolve().parent / "pir_corpus.json"
 
 _INCIDENT_SQL = """
     INSERT INTO incidents (external_id, service, title, description, severity, status,
@@ -51,8 +54,8 @@ def embed_incident_text(incident: dict) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def main() -> None:
-    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
+def load_corpus(path: Path) -> None:
+    corpus = json.loads(path.read_text(encoding="utf-8"))
     conn = db.get_conn()
 
     incidents = corpus["incidents"]
@@ -77,7 +80,16 @@ def main() -> None:
             db.with_retry(lambda c=cur, p=params: c.execute(_RUNBOOK_DELETE_SQL, p))
             db.with_retry(lambda c=cur, p=params: c.execute(_RUNBOOK_SQL, p))
         print(f"\r  runbooks {n}/{len(runbooks)}", end="", flush=True)
-    print("\nload complete — run the AC2 eval next: uv run pytest tests/retrieval_eval.py -s")
+    print()
+
+
+def main() -> None:
+    print(f"== {CORPUS.name}")
+    load_corpus(CORPUS)
+    if PIR_CORPUS.exists():
+        print(f"== {PIR_CORPUS.name}")
+        load_corpus(PIR_CORPUS)
+    print("load complete — run the AC2 eval next: uv run pytest tests/retrieval_eval.py -s")
 
 
 if __name__ == "__main__":

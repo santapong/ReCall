@@ -10,6 +10,17 @@ below are those criteria, defined in [`docs/01-objective-roadmap.md`](docs/01-ob
 
 ## [Unreleased]
 
+### 2026-08-04 — real-postmortem track (credential-free half)
+
+#### Added
+- **`infra/seed/pir_corpus.json`** — 10 real public post-incident reports (Cloudflare 2019 +
+  2023, GitHub 2018, GitLab 2017, AWS Kinesis 2020 + us-east-1 2021, Fastly 2021, Slack 2021,
+  Roblox 2021, Atlassian 2022), each hand-extracted from its cited primary source on 2026-08-04,
+  blameless summaries, isolated in service `public` so AC2's pinned eval set is untouched.
+  The review's biggest remaining Real-World Impact item; only the embedding pass still waits on
+  Bedrock. `load.py` loads it after the Orbital corpus; `tests/test_pir_corpus.py` guards shape,
+  sources, blamelessness and isolation. Suite: 58 → 62.
+
 ### 2026-08-04 — CI runs the DB-backed suite; migrations idempotent
 
 #### Added
