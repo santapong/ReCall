@@ -408,9 +408,67 @@ RUNBOOKS = {
     ],
 }
 
+# The alert title for each archetype's paired eval alert.
+#
+# WHY THIS EXISTS (2026-08-04): the generator originally reused `arch["title"]`
+# verbatim as the alert title, so all 20 eval alerts carried a byte-identical copy of
+# their target incident's title (measured similarity 1.00, 20/20). Since the retrieval
+# query is built from title + description, AC2 was scoring a string-identity lookup,
+# not semantic retrieval — a benchmark that could not fail and therefore measured
+# nothing. tests/test_eval_independence.py now enforces the separation.
+#
+# The register is the fix, not just the wording: an INCIDENT title is written after the
+# fact by a human who already knows the cause ("route table drift"); an ALERT title is
+# emitted by a monitor that knows only the symptom that crossed a threshold. Writing
+# each in its own voice removes the diagnostic noun phrase that was leaking the answer.
+# symptom_b still carries the real signal — that is what retrieval is meant to work on.
+ALERT_TITLES = {
+    # api-gateway
+    "upstream-timeout": "SLO breach — edge availability below target in {region}",
+    "rate-limiter": "Customer escalation — valid requests being rejected in {region}",
+    "cert-expiry": "Customer-reported connection errors climbing in {region}",
+    "route-drift": "Not-found responses above threshold in {region}",
+    "ws-leak": "Gateway pods restarting repeatedly in {region}",
+    # auth
+    "refresh-loop": "Auth request volume alarm — {region}",
+    "bcrypt-cost": "Users reporting slow sign-in in {region}",
+    "session-evict": "Support surge — customers signed out unexpectedly in {region}",
+    "oidc-outage": "Social sign-in success rate below threshold in {region}",
+    "clock-skew": "Intermittent 401s on valid credentials in {region}",
+    # billing
+    "webhook-timeout": "Provider callback processing over budget in {region}",
+    "invoice-stuck": "Nightly billing run has not completed — {region}",
+    "decline-spike": "Checkout conversion drop — charges failing in {region}",
+    "double-charge": "Repeat-charge complaints rising in {region}",
+    "rounding-drift": "End-of-day reconciliation mismatch — {region}",
+    # search
+    "index-lag": "New content not appearing in results — {region}",
+    "shard-hotspot": "Subset of tenants seeing slow responses in {region}",
+    "planner-regression": "Filtered queries slow since last release — {region}",
+    "synonym-relevance": "Result quality alarm — engagement down in {region}",
+    "agg-oom": "Search cluster members crash-looping in {region}",
+    # notifications
+    "email-backlog": "Outbound mail arriving late for {region} customers",
+    "apns-cert": "iOS sends failing while android succeeds — {region}",
+    "template-error": "Customers receiving empty message bodies in {region}",
+    "provider-limit": "One-time codes not arriving in time — {region}",
+    "retry-storm": "Customers receiving repeated copies of the same alert in {region}",
+    # db-cluster
+    "serialization-spike": "Application transaction failures above threshold in {region}",
+    "hot-range": "Write latency degraded cluster-wide — {region}",
+    "disk-pressure": "Intermittent write stalls observed in {region}",
+    "backup-io": "Read latency spikes during the overnight window in {region}",
+    "conn-storm": "New pods cannot connect to the database in {region}",
+}
+
 INCIDENTS_PER_SERVICE = {s: 13 for s in SERVICES} | {"api-gateway": 14, "db-cluster": 14}
 EVAL_TARGETS_PER_SERVICE = {s: 3 for s in SERVICES} | {"billing": 4, "db-cluster": 4}  # = 20
 SEVERITIES = ("SEV-1", "SEV-2", "SEV-3")
+
+# Fail at import, not at eval time, if a new archetype lands without an alert title.
+_MISSING = {a["key"] for arcs in ARCHETYPES.values() for a in arcs} ^ set(ALERT_TITLES)
+if _MISSING:
+    raise AssertionError(f"ALERT_TITLES and ARCHETYPES disagree on: {sorted(_MISSING)}")
 
 
 def _params(rng: random.Random) -> dict:
@@ -464,7 +522,9 @@ def build_corpus() -> dict:
                         "alert": {
                             "external_id": f"ALERT-{alert_num}",
                             "service": service,
-                            "title": arch["title"].format(**p),
+                            # NOT arch["title"] — see ALERT_TITLES. Reusing the
+                            # incident's own title made AC2 a string-identity check.
+                            "title": ALERT_TITLES[arch["key"]].format(**p),
                             "description": arch["symptom_b"].format(**p),
                             "severity": "SEV-2",
                         },
