@@ -39,6 +39,19 @@ Tribal on-call knowledge lives in senior engineers' heads and rots in unread pos
 leave, it evaporates — and the next 2 a.m. incident gets diagnosed from zero, again. The knowledge
 isn't missing; it's unreachable at the moment it matters.
 
+The pain, concretely:
+
+- **The same incident gets solved twice.** A failure that took four hours to root-cause last
+  quarter takes four hours again, because the fix lives in a postmortem nobody opens at 2 a.m.
+- **Diagnosis speed depends on who answers the page.** The engineer with eight years of context
+  resolves in minutes; the new hire escalates. Mean time to resolution is really mean time to the
+  right memory.
+- **Postmortems are write-only.** Teams invest hours writing them; retrieval at incident time is
+  grep-and-hope. The knowledge base grows while its usefulness doesn't.
+- **Off-the-shelf AI assistants make it worse, confidently.** A model without incident memory
+  produces generic advice — or worse, a plausible-sounding diagnosis with no grounding. On-call
+  needs citations, not vibes.
+
 **Recall makes institutional incident memory durable, queryable, and agent-native.** An alert comes
 in; the agent retrieves the closest past incidents from a distributed vector index, proposes a
 diagnosis grounded in the real resolution that worked last time — citing real incident IDs and a
