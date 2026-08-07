@@ -26,6 +26,11 @@ from embed import with_throttle_retry
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "")
 MAX_TURNS = 12
 
+# "local" selects the scripted stand-in in local_converse(). Anything else — including
+# unset — selects real Bedrock. Same contract as embed.EMBED_BACKEND: opt in by exact
+# value, never infer it from a missing credential.
+BEDROCK_BACKEND = os.environ.get("BEDROCK_BACKEND", "").strip().lower()
+
 # Repo layout: lambda/../prompts/. Deployed zip (flat, make deploy): ./prompts/.
 _PROMPT_CANDIDATES = (
     Path(__file__).resolve().parent / "prompts" / "system.md",
@@ -154,16 +159,85 @@ def _dispatch(name: str, args: dict, incident_id: str, log: "_RunLog"):
     return {"status": "success", "content": [{"json": json.loads(payload) if payload != "ok" else {"ok": True}}]}
 
 
+def _tool_results(messages):
+    """Every toolResult payload so far, oldest first — the scripted model's only
+    view of what has happened."""
+    out = []
+    for message in messages:
+        for block in message.get("content", []):
+            result = block.get("toolResult") if isinstance(block, dict) else None
+            if result:
+                for piece in result.get("content", []):
+                    if "json" in piece:
+                        out.append((result.get("status"), piece["json"]))
+    return out
+
+
+def local_converse(messages):
+    """A scripted stand-in for the model. NOT a fallback — reached only when
+    BEDROCK_BACKEND=local is set explicitly.
+
+    It walks the one path the system prompt describes (search → runbook → propose →
+    summarize) so that the loop, the decision log, the ingest path and the status page
+    can all be exercised end-to-end with zero AWS access. It is deliberately dumb: it
+    makes no judgements, it only follows the contract. Nothing it produces is evidence
+    about model quality, and nothing filmed may run on it.
+    """
+    results = _tool_results(messages)
+    searched = next((r for status, r in results if status == "success" and "matches" in r), None)
+    got_runbook = any(status == "success" and "content" in r for status, r in results)
+    proposed = any(status == "success" and r.get("ok") for status, r in results)
+
+    def reply(content):
+        return {"output": {"message": {"role": "assistant", "content": content}},
+                "usage": {"inputTokens": 0, "outputTokens": 0}}
+
+    def tool(name, args):
+        return reply([{"toolUse": {"toolUseId": f"local-{name}", "name": name, "input": args}}])
+
+    if searched is None:
+        alert = json.loads(messages[0]["content"][0]["text"])
+        return tool("search_incidents", {"query": f"{alert['title']} {alert['description']}",
+                                         "service": alert["service"]})
+
+    if proposed:
+        return reply([{"text": "confidence " + (searched.get("confidence") or "low")
+                       + ": diagnosis recorded from retrieved memory (local backend)."}])
+
+    if searched.get("confidence") == "none":
+        # AC13's honesty branch, taken structurally rather than by judgement.
+        return reply([{"text": "confidence none: no sufficiently close incident exists "
+                               "in memory; not guessing (local backend)."}])
+
+    runbook_ids = searched.get("runbook_ids") or []
+    if not got_runbook and runbook_ids:
+        return tool("get_runbook", {"runbook_id": runbook_ids[0]})
+
+    alert = json.loads(messages[0]["content"][0]["text"])
+    cited = [m["id"] for m in (searched.get("matches") or [])][:3]
+    return tool("propose_diagnosis", {
+        "incident_id": alert["incident_id"],
+        "diagnosis": "Matches prior incidents in memory; follow the cited runbook step "
+                     "(local backend — not a model judgement).",
+        "cited_incident_ids": cited,
+    })
+
+
 def _converse(system, messages, log: "_RunLog"):
     """One Bedrock turn, timed and logged. Token counts come from the Converse
     response's usage block — cost is an NFR, so it is recorded, not estimated."""
     started = time.perf_counter()
-    resp = with_throttle_retry(lambda: get_client().converse(
-        modelId=MODEL_ID, system=system, messages=messages,
-        toolConfig={"tools": DIAGNOSIS_TOOL_SPECS},
-    ))
+    if BEDROCK_BACKEND == "local":
+        resp = local_converse(messages)
+    else:
+        resp = with_throttle_retry(lambda: get_client().converse(
+            modelId=MODEL_ID, system=system, messages=messages,
+            toolConfig={"tools": DIAGNOSIS_TOOL_SPECS},
+        ))
     usage = resp.get("usage") or {}
-    log.step("model_turn", MODEL_ID, "success", _ms(started),
+    # The decision log records which model produced the turn, so a run on the stand-in
+    # is identifiable afterwards rather than looking like a real one.
+    log.step("model_turn", MODEL_ID or "local-scripted", "success", _ms(started),
              input_tokens=usage.get("inputTokens"),
              output_tokens=usage.get("outputTokens"))
     return resp
@@ -175,7 +249,7 @@ def run_agent(incident_id: str, service: str, title: str, description: str) -> s
     Returns the model's final text. Bedrock throttling gets the with_retry shape;
     after max attempts the run fails visibly — never a silent degrade (docs/02).
     """
-    if not MODEL_ID:
+    if not MODEL_ID and BEDROCK_BACKEND != "local":
         raise RuntimeError("BEDROCK_MODEL_ID is unset — record the verified ID per docs/04")
     system = [{"text": load_system_prompt()}]
     messages = [{"role": "user", "content": [{"text": json.dumps({

@@ -13,10 +13,10 @@ PY_RUNTIME ?= python$(PY_VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help sync test lint fmt probe migrate seed deploy deploy-config function-url branches-init chaos-up chaos-down
+.PHONY: help sync test lint fmt probe migrate seed local-load local-e2e local-eval deploy deploy-config function-url branches-init chaos-up chaos-conn chaos-down
 
 help:
-	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
 
 sync: ## install deps (uv)
 	uv sync
@@ -46,6 +46,24 @@ migrate: ## apply numbered DDL files in infra/migrations/ in order
 
 seed: ## regenerate the Orbital corpus (P1)
 	uv run python infra/seed/generate.py
+
+# --- credential-free local stack (M0') --------------------------------------
+# Explicit opt-in backends, never inferred from a missing credential. Scores and
+# thresholds produced here are provisional: the embedder is lexical, not semantic
+# (lambda/embed.py). Nothing filmed may run on it.
+LOCAL_ENV = EMBED_BACKEND=local BEDROCK_BACKEND=local
+
+local-load: ## embed + load the corpus with the local backend (no AWS needed)
+	@test -n "$$CRDB_CONN_STRING" || { echo "set CRDB_CONN_STRING (see .env.example)"; exit 1; }
+	$(LOCAL_ENV) uv run python infra/seed/load.py
+
+local-e2e: ## POST an alert through the real handler on the local stack
+	@test -n "$$CRDB_CONN_STRING" || { echo "set CRDB_CONN_STRING (see .env.example)"; exit 1; }
+	$(LOCAL_ENV) uv run python scripts/local_e2e.py
+
+local-eval: ## AC2 retrieval eval on the local stack (PROVISIONAL — see the printout)
+	@test -n "$$CRDB_CONN_STRING" || { echo "set CRDB_CONN_STRING (see .env.example)"; exit 1; }
+	$(LOCAL_ENV) uv run pytest tests/test_retrieval_eval.py -s
 
 deploy: ## bundle lambda/ + prompts/ + deps into a zip, update the function AND its config
 	rm -rf build && mkdir -p build/pkg
@@ -90,7 +108,18 @@ chaos-up: ## AC7 rig: start + init the 3-node cluster, enable the vector-index f
 	@sleep 2; docker exec recall-crdb-1 cockroach init --insecure 2>/dev/null || true
 	@sleep 2; docker exec recall-crdb-1 cockroach sql --insecure \
 		-e "SET CLUSTER SETTING feature.vector_index.enabled = true;"
-	@echo "rig up: postgresql://root@localhost:26260/defaultdb?sslmode=disable (kill = docker stop recall-crdb-2)"
+	@# Multi-host, and the kill target is the node we are actually connected to.
+	@# The old single-host string (crdb-1) with `docker stop recall-crdb-2` never
+	@# broke the connection, so db.with_retry's reconnect arm — the thing AC7 claims
+	@# to demonstrate — could not fire and the shot proved nothing. Killing crdb-1
+	@# with only crdb-1 in the string breaks it permanently instead, hence all three.
+	@echo "rig up: $(CHAOS_CONN)"
+	@echo "kill = docker stop recall-crdb-1  (the node the connection is on)"
+
+CHAOS_CONN = postgresql://root@localhost:26260,localhost:26261,localhost:26262/defaultdb?sslmode=disable
+
+chaos-conn: ## print the multi-host rig connection string (export it before the take)
+	@echo '$(CHAOS_CONN)'
 
 chaos-down: ## stop the AC7 rig and wipe its volumes
 	docker compose -f infra/chaos/docker-compose.yml down -v
