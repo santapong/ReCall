@@ -69,6 +69,17 @@ TOOL_SPECS = [
         }, "required": ["incident_id", "resolution_summary"]}}}},
 ]
 
+# The manifest is propose-only *structurally*, not by instruction (README "The
+# guarantee"). `write_incident` is a real, irreversible write — it sets
+# status='resolved' and overwrites the embedding future retrievals match against —
+# so a model that called it mid-diagnosis could fabricate a resolution and poison
+# memory. A sentence in prompts/system.md is not an enforcement mechanism, so the
+# diagnosis loop never sees the tool at all, and _dispatch refuses it a second time
+# in case a spec ever drifts back in. The close path is scripts/close.py, human-run.
+CLOSE_PATH_TOOLS = frozenset({"write_incident"})
+DIAGNOSIS_TOOL_SPECS = [s for s in TOOL_SPECS
+                        if s["toolSpec"]["name"] not in CLOSE_PATH_TOOLS]
+
 _client = None
 
 
@@ -122,11 +133,16 @@ def _dispatch(name: str, args: dict, incident_id: str, log: "_RunLog"):
 
     Both outcomes are logged: a rejected citation is the most interesting row in the
     decision log, because it is the enforcement working."""
-    fn = tools.TOOL_MANIFEST[name]
     started = time.perf_counter()
     try:
+        if name in CLOSE_PATH_TOOLS:
+            raise ValueError(f"{name} is not available during diagnosis — it is the "
+                             "close path, run by a human after resolution")
+        # Inside the try on purpose: an unknown tool name is a KeyError, which the
+        # model can correct itself from. Outside, it escaped as a 502.
+        fn = tools.TOOL_MANIFEST[name]
         result = fn(**args)
-    except (LookupError, ValueError) as exc:
+    except (LookupError, ValueError, TypeError) as exc:
         log.step("tool_call", name, "error", _ms(started), detail=str(exc))
         return {"status": "error", "content": [{"text": str(exc)}]}
     confidence = getattr(result, "confidence", None)
@@ -144,7 +160,7 @@ def _converse(system, messages, log: "_RunLog"):
     started = time.perf_counter()
     resp = with_throttle_retry(lambda: get_client().converse(
         modelId=MODEL_ID, system=system, messages=messages,
-        toolConfig={"tools": TOOL_SPECS},
+        toolConfig={"tools": DIAGNOSIS_TOOL_SPECS},
     ))
     usage = resp.get("usage") or {}
     log.step("model_turn", MODEL_ID, "success", _ms(started),
@@ -169,7 +185,12 @@ def run_agent(incident_id: str, service: str, title: str, description: str) -> s
     proposed = False
     log = _RunLog(incident_id)
 
-    for _ in range(MAX_TURNS):
+    # One turn is reserved for the closing summary that follows a successful
+    # propose_diagnosis, so MAX_TURNS is the real ceiling on Converse calls rather
+    # than one below it. Previously a run that proposed on the last iteration made
+    # MAX_TURNS + 1 calls, putting both the documented cost and latency ceilings a
+    # full turn under the truth.
+    for _ in range(MAX_TURNS - 1):
         message = _converse(system, messages, log)["output"]["message"]
         messages.append(message)
         tool_uses = [c["toolUse"] for c in message["content"] if "toolUse" in c]

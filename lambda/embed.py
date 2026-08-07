@@ -27,7 +27,7 @@ EMBED_MODEL_ID = os.environ.get("BEDROCK_EMBED_MODEL_ID", "amazon.titan-embed-te
 
 # The one place the dimension lives. The probe prints the real number; if it is not
 # 1024, this constant and the VECTOR(n) markers in infra/ move together in one commit.
-EMBED_DIM = int(os.environ.get("EMBED_DIM", "1024"))
+EMBED_DIM = int(os.environ.get("EMBED_DIM") or "1024")
 
 THROTTLE_CODES = ("ThrottlingException", "TooManyRequestsException")
 
@@ -42,9 +42,16 @@ def get_client():
     return _client
 
 
-def with_throttle_retry(fn, *, max_attempts=3, base_delay=0.2):
+def with_throttle_retry(fn, *, max_attempts=5, base_delay=1.0):
     """docs/05 retry shape, Bedrock's half: same silent-retry / loud-failure contract
-    as db.with_retry, matching on the throttling error codes instead of SQLSTATE."""
+    as db.with_retry, matching on the throttling error codes instead of SQLSTATE.
+
+    Deliberately slower than db.with_retry's 3 x 0.2s. That shape totals ~0.6s of
+    backoff, which is the right order for a CockroachDB serialization conflict and
+    the wrong one for Bedrock: real account-level throttling clears in seconds, and
+    this wraps every Converse turn plus all 92 seed embeddings. 5 x 1.0s gives ~15s
+    of total patience before failing loudly.
+    """
     for attempt in range(1, max_attempts + 1):
         try:
             return fn()

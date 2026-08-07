@@ -54,7 +54,7 @@ make probe              # vector probe against your cluster (needs CRDB_CONN_STR
 make migrate            # apply infra/migrations/*.sql in order
 uv run python infra/seed/generate.py   # regenerate corpus + eval fixtures (make seed)
 uv run python infra/seed/load.py       # embed + upsert the corpus (needs Bedrock creds)
-uv run pytest tests/retrieval_eval.py -s   # AC2 eval — runs once corpus is embedded
+uv run pytest tests/test_retrieval_eval.py -s   # AC2 eval — runs once corpus is embedded
 make chaos-up / chaos-down             # AC7 3-node kill rig (Docker)
 make deploy             # bundle deps + prompts + code, update the Lambda
 scripts/wt.sh new feat/<slug>          # branch + worktree per docs/07 (base: develop)

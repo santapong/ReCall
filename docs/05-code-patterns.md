@@ -89,7 +89,7 @@ Changing them after P1 requires rerunning the full AC2 eval in the same commit.
 ## Testing
 
 - `pytest`; fixtures load the deterministic corpus (fixed RNG seed committed).
-- `tests/retrieval_eval.py` **is** AC2: 20 alerts, expected IDs pinned, asserts ≥18 top-3 hits and prints the full hit table — the table screenshot goes in the README.
+- `tests/test_retrieval_eval.py` **is** AC2: 20 alerts, expected IDs pinned, asserts ≥18 top-3 hits and prints the full hit table — the table screenshot goes in the README.
 - `tests/test_manifest.py` **is** AC4: asserts the tool registry has exactly 4 entries with the exact names.
 - Citation validation test **is** AC3: feed a diagnosis citing a fake ID, assert it raises.
 - No mocked-DB unit tests for SQL paths — run against a local single-node `cockroach` in CI. Mocks lie about serialization behavior.

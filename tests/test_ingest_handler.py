@@ -99,3 +99,57 @@ def test_get_health_routes_to_health(monkeypatch):
     resp = ingest_handler.handler(_get_event("/health"), None)
     assert resp["statusCode"] == 200
     assert json.loads(resp["body"]) == {"incidents": 92}
+
+
+# --- B4: the status page is a browser, and browsers enforce CORS -------------
+
+
+def test_every_response_carries_the_cors_header(monkeypatch):
+    """Without this the status page — served from file:// or GitHub Pages — can never
+    read the Function URL, and the primary on-camera surface shows 'waiting for
+    incident…' forever. Asserted on an error path too: a 404 the page cannot read is
+    indistinguishable from a page that never loaded (see F3)."""
+    _wire(monkeypatch)
+    monkeypatch.setattr(tools, "health", lambda: {"incidents": 92})
+
+    for resp in (
+        ingest_handler.handler({"body": json.dumps(ALERT)}, None),      # 200 POST
+        ingest_handler.handler({}, None),                                # 400
+        ingest_handler.handler(_get_event("/health"), None),             # 200 GET
+        ingest_handler.handler(_get_event("/nope"), None),               # 404
+    ):
+        assert resp["headers"]["Access-Control-Allow-Origin"] == "*"
+
+
+# --- B6: the POST branch fails loudly to the caller, not only to CloudWatch --
+
+
+def test_agent_failure_is_a_500_with_a_reason_not_an_uncaught_502(monkeypatch):
+    """run_agent and insert_incident had no try/except, so a DB blip or a Bedrock
+    error propagated out of handler and the Function URL returned a bare 502 with the
+    real reason buried in logs — the worst failure mode to hit mid-demo."""
+    _wire(monkeypatch)
+
+    def boom(*a, **kw):
+        raise RuntimeError("thresholds untuned")
+
+    monkeypatch.setattr(ingest_handler, "run_agent", boom)
+    resp = ingest_handler.handler({"body": json.dumps(ALERT)}, None)
+
+    assert resp["statusCode"] == 500
+    body = json.loads(resp["body"])
+    assert body["error"] == "diagnosis failed"
+    assert "RuntimeError" in body["detail"] and "thresholds untuned" in body["detail"]
+
+
+def test_insert_failure_is_also_handled(monkeypatch):
+    _wire(monkeypatch)
+
+    def boom(*a, **kw):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(tools, "insert_incident", boom)
+    resp = ingest_handler.handler({"body": json.dumps(ALERT)}, None)
+
+    assert resp["statusCode"] == 500
+    assert "connection refused" in json.loads(resp["body"])["detail"]

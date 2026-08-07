@@ -75,18 +75,61 @@ def test_insert_incident_is_idempotent(incident):
     assert again == incident  # same alert twice = same row (AC1)
 
 
+def _retrieve(incident_id, *match_ids, confidence="high"):
+    """Persist a search result citing match_ids, exactly as the loop does after
+    search_incidents. Citations are validated against this, so a test that proposes
+    without it is testing a diagnosis the agent could not have grounded."""
+    tools.record_retrieval(incident_id, tools.SearchResult(
+        query="q", service="billing", confidence=confidence, runbook_ids=["rb-1"],
+        matches=[tools.Match(
+            id=str(mid), external_id=f"ext-{mid}", title="past incident",
+            service="billing", distance=0.2, score=0.8,
+        ) for mid in match_ids],
+    ))
+
+
 def test_propose_diagnosis_with_valid_citation_persists(incident):
+    _retrieve(incident, incident)
     tools.propose_diagnosis(incident, "webhook pool exhausted", [incident])
     row = _working_state(incident)
     assert row[0] == "webhook pool exhausted"
 
 
 def test_propose_diagnosis_fake_id_raises_and_never_persists(incident):
+    _retrieve(incident, incident)
     fake = str(uuid.uuid4())  # valid UUID, no such incident — the AC3 case
-    with pytest.raises(LookupError, match="invented citation"):
+    with pytest.raises(LookupError, match="not in this run's search results"):
         tools.propose_diagnosis(incident, "made-up grounding", [fake])
     row = _working_state(incident)
     assert row[0] is None  # nothing persisted
+
+
+def test_propose_diagnosis_rejects_a_real_but_unretrieved_incident(incident):
+    """T4, the provenance half. Validating citations against the whole incidents
+    table only proved an ID was real — an incident from another service that the
+    agent never retrieved passed just as easily. This is the case that used to slip
+    through, and it is the difference between 'the ID exists' and 'the agent could
+    only cite what it actually retrieved'."""
+    other = tools.insert_incident(
+        f"test-{uuid.uuid4()}", "shipping", "unrelated incident", "elsewhere", "sev3",
+    )
+    try:
+        _retrieve(incident, incident)  # the agent retrieved this one, not `other`
+        with pytest.raises(LookupError, match="not in this run's search results"):
+            tools.propose_diagnosis(incident, "citing something I never saw", [other])
+        assert _working_state(incident)[0] is None
+    finally:
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM working_state WHERE incident_id = %s", (other,))
+            cur.execute("DELETE FROM incidents WHERE id = %s", (other,))
+
+
+def test_propose_diagnosis_requires_a_search_before_citing(incident):
+    """Citing anything at all before calling search_incidents is not groundable."""
+    with pytest.raises(LookupError, match="nothing was retrieved"):
+        tools.propose_diagnosis(incident, "grounded in thin air", [incident])
+    assert _working_state(incident)[0] is None
 
 
 def test_propose_diagnosis_unknown_incident_raises():
@@ -127,8 +170,7 @@ def test_write_incident_scrubs_resolves_and_embeds(incident):
 
 
 def test_status_snapshot_reads_incident_and_working_state(incident):
-    tools.record_retrieval(incident, tools.SearchResult(
-        query="q", service="billing", confidence="high", matches=[], runbook_ids=[]))
+    _retrieve(incident, incident)
     tools.propose_diagnosis(incident, "pool exhausted", [incident])
     snap = tools.status_snapshot(incident)
     assert snap["incident_id"] == incident

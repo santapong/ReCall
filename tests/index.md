@@ -13,7 +13,7 @@ pytest is ground truth (docs/06). Fast structural tests run everywhere; DB-backe
 | `test_agent_loop.py` | **AC3/AC13/AC4** loop mechanics — dispatch, error-feedback (invented ID never persists), honesty stop, loud runaway guard; Bedrock faked | live |
 | `test_ingest_handler.py` | **AC1** mechanics — validate, dedupe path, 400 on garbage; offline | live |
 | `test_pir_corpus.py` | Real-PIR track guards — 10+ sourced public postmortems, blameless, isolated in service 'public', AC2 set untouched | live |
-| `retrieval_eval.py` | **AC2** — 20 alerts, ≥18 top-3 vs the live index, prints the hit table | harness ready — runs once the corpus is embedded (skips with the reason until then) |
+| `test_retrieval_eval.py` | **AC2** — 20 alerts, ≥18 top-3 vs the live index, prints the hit table | harness ready — runs once the corpus is embedded (skips with the reason until then) |
 | `test_tools_write.py` | **AC3** — fake ID raises, never persists; **AC5** close path scrub+embed+resolve; **AC1** idempotent ingest. Needs the local node (skips without `CRDB_CONN_STRING`) | live |
 
 ## Invariants

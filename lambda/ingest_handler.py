@@ -28,7 +28,13 @@ class Alert(BaseModel):
 
 
 def _response(status: int, body: dict) -> dict:
-    return {"statusCode": status, "headers": {"Content-Type": "application/json"},
+    # CORS is not optional here: the status page is a static file served from
+    # file:// or GitHub Pages, so without this header the browser blocks every read
+    # of the Function URL and the primary on-camera surface shows "waiting for
+    # incident…" forever. Reads are public by design for the demo (see README).
+    return {"statusCode": status,
+            "headers": {"Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*"},
             "body": json.dumps(body)}
 
 
@@ -61,8 +67,16 @@ def handler(event, context):
     except ValidationError as exc:
         return _response(400, {"error": "invalid alert payload", "detail": exc.errors()})
 
-    incident_id = tools.insert_incident(
-        alert.external_id, alert.service, alert.title, alert.description, alert.severity,
-    )
-    diagnosis = run_agent(incident_id, alert.service, alert.title, alert.description)
+    # Loud to the caller, not only to CloudWatch. Unhandled, a DB blip or a Bedrock
+    # error surfaces as a bare 502 from the Function URL with the real reason buried
+    # in logs — the worst possible failure mode mid-demo. Still loud: 500, with the
+    # exception type and message in the body.
+    try:
+        incident_id = tools.insert_incident(
+            alert.external_id, alert.service, alert.title, alert.description, alert.severity,
+        )
+        diagnosis = run_agent(incident_id, alert.service, alert.title, alert.description)
+    except Exception as exc:
+        return _response(500, {"error": "diagnosis failed",
+                               "detail": f"{type(exc).__name__}: {exc}"})
     return _response(200, {"incident_id": incident_id, "response": diagnosis})

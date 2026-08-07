@@ -54,9 +54,25 @@ def embed_incident_text(incident: dict) -> str:
     return "\n".join(p for p in parts if p)
 
 
+def _execute(sql: str, params: dict) -> None:
+    """Run one statement under the retry arm, acquiring the connection and cursor
+    *inside* the retried callable.
+
+    This is load-bearing, not style. db.with_retry handles a dropped link by calling
+    close_conn() and retrying — but a connection or cursor captured beforehand is
+    already dead by then, so the retry re-executed against a closed cursor and could
+    never succeed. One transient drop killed the whole 92-document pass mid-Bedrock-
+    spend, which is exactly the situation the retry exists to survive.
+    """
+    def run():
+        with db.get_conn().cursor() as cur:
+            cur.execute(sql, params)
+
+    db.with_retry(run)
+
+
 def load_corpus(path: Path) -> None:
     corpus = json.loads(path.read_text(encoding="utf-8"))
-    conn = db.get_conn()
 
     incidents = corpus["incidents"]
     for n, incident in enumerate(incidents, 1):
@@ -66,8 +82,7 @@ def load_corpus(path: Path) -> None:
             "status", "resolution_summary", "opened_at", "resolved_at",
         )}
         params["embedding"] = vector
-        with conn.cursor() as cur:
-            db.with_retry(lambda c=cur, p=params: c.execute(_INCIDENT_SQL, p))
+        _execute(_INCIDENT_SQL, params)
         print(f"\r  incidents {n}/{len(incidents)}", end="", flush=True)
     print()
 
@@ -76,9 +91,8 @@ def load_corpus(path: Path) -> None:
         vector = to_vector_literal(embed(f"{runbook['title']}\n{runbook['content']}"))
         params = {"service": runbook["service"], "title": runbook["title"],
                   "content": runbook["content"], "embedding": vector}
-        with conn.cursor() as cur:
-            db.with_retry(lambda c=cur, p=params: c.execute(_RUNBOOK_DELETE_SQL, p))
-            db.with_retry(lambda c=cur, p=params: c.execute(_RUNBOOK_SQL, p))
+        _execute(_RUNBOOK_DELETE_SQL, params)
+        _execute(_RUNBOOK_SQL, params)
         print(f"\r  runbooks {n}/{len(runbooks)}", end="", flush=True)
     print()
 
@@ -89,7 +103,7 @@ def main() -> None:
     if PIR_CORPUS.exists():
         print(f"== {PIR_CORPUS.name}")
         load_corpus(PIR_CORPUS)
-    print("load complete — run the AC2 eval next: uv run pytest tests/retrieval_eval.py -s")
+    print("load complete — run the AC2 eval next: uv run pytest tests/test_retrieval_eval.py -s")
 
 
 if __name__ == "__main__":

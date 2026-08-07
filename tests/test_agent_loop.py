@@ -217,3 +217,109 @@ def test_system_prompt_loads_the_contract():
     prompt = agent.load_system_prompt()
     assert "confidence" in prompt and "none" in prompt
     assert "# Agent system prompt" not in prompt  # human preamble stripped
+
+
+# --- T1: propose-only is structural, not instructional -----------------------
+# README's "The guarantee" says Recall never executes a fix and that the close path
+# is a separate tool a human triggers. Until these tests existed, the only thing
+# enforcing that was a sentence in prompts/system.md, and write_incident — which
+# does UPDATE incidents SET status='resolved', embedding=... — was offered to the
+# model on every single Converse call.
+
+
+def test_diagnosis_loop_is_never_offered_the_write_tool(monkeypatch, recorded):
+    """The invariant, at the only place it can actually be enforced: the toolConfig."""
+    client = FakeClient([_text_msg("confidence none: nothing close in memory.")])
+    _install(monkeypatch, client)
+    agent.run_agent("inc-t1", "billing", "t", "d")
+
+    assert client.calls, "the loop never called Converse"
+    for call in client.calls:
+        offered = [s["toolSpec"]["name"] for s in call["toolConfig"]["tools"]]
+        assert "write_incident" not in offered
+        assert offered == ["search_incidents", "get_runbook", "propose_diagnosis"]
+
+
+def test_write_incident_is_refused_mid_diagnosis_even_if_called(monkeypatch, recorded, logged):
+    """Belt and braces: if a spec ever drifts back into the diagnosis config, dispatch
+    still refuses, the model gets a correctable error, and nothing is written."""
+    written = []
+    client = FakeClient([
+        _tool_msg("write_incident", {"incident_id": "inc-t2", "resolution_summary": "faked"}),
+        _text_msg("understood — that is the close path."),
+    ])
+    _install(monkeypatch, client, write_incident=lambda **kw: written.append(kw))
+    out = agent.run_agent("inc-t2", "billing", "t", "d")
+
+    assert not written, "write_incident executed during diagnosis"
+    assert "close path" in out
+    errors = [s for s in logged if s["outcome"] == "error"]
+    assert errors and errors[0]["name"] == "write_incident"
+    assert "not available during diagnosis" in errors[0]["detail"]
+
+
+def test_manifest_still_holds_all_four_tools():
+    """AC4 is about the manifest, not the diagnosis config — filtering one out of the
+    Converse call must not shrink the manifest the pitch counts."""
+    assert len(tools.TOOL_MANIFEST) == 4
+    assert len(agent.TOOL_SPECS) == 4
+    assert len(agent.DIAGNOSIS_TOOL_SPECS) == 3
+
+
+# --- B6: recoverable errors reach the model, not the caller as a 502 ---------
+
+
+def test_unknown_tool_name_is_correctable_not_fatal(monkeypatch, recorded, logged):
+    """The manifest lookup used to sit outside the try, so a hallucinated tool name
+    escaped as an uncaught KeyError and the Function URL returned 502."""
+    client = FakeClient([
+        _tool_msg("restart_the_service", {"host": "web-1"}),
+        _text_msg("confidence none: I only have memory tools."),
+    ])
+    _install(monkeypatch, client)
+    out = agent.run_agent("inc-b6a", "billing", "t", "d")
+
+    assert "confidence none" in out
+    assert [s for s in logged if s["outcome"] == "error"]
+
+
+def test_extra_kwarg_is_correctable_not_fatal(monkeypatch, recorded, logged):
+    """A model passing an argument the tool doesn't take raises TypeError, which the
+    original narrow (LookupError, ValueError) catch let through."""
+    client = FakeClient([
+        _tool_msg("search_incidents", {"query": "q", "service": "billing", "nonsense": 1}),
+        _text_msg("confidence none: retrying without that argument."),
+    ])
+    def real_signature(query, service, k=5):  # as shipped — rejects the extra kwarg
+        return _search_result()
+
+    _install(monkeypatch, client, search_incidents=real_signature)
+    out = agent.run_agent("inc-b6b", "billing", "t", "d")
+
+    assert "confidence none" in out
+    errors = [s for s in logged if s["outcome"] == "error"]
+    assert errors and errors[0]["name"] == "search_incidents"
+    assert "nonsense" in errors[0]["detail"]
+
+
+# --- C6: MAX_TURNS is the real ceiling, not one below it ---------------------
+
+
+def test_converse_budget_never_exceeds_max_turns(monkeypatch, recorded):
+    """A run that proposes on its last available iteration used to make MAX_TURNS + 1
+    Converse calls, because the closing summary fired inside the same iteration —
+    putting the documented cost and latency ceilings a full turn under the truth."""
+    scripted = [_tool_msg("search_incidents", {"query": "q", "service": "billing"})
+                for _ in range(agent.MAX_TURNS - 2)]
+    scripted.append(_tool_msg("propose_diagnosis", {
+        "incident_id": "inc-c6", "diagnosis": "d", "cited_incident_ids": ["past-1"]}))
+    scripted.append(_text_msg("confidence high: summarized on the last turn"))
+
+    client = FakeClient(scripted)
+    _install(monkeypatch, client,
+             search_incidents=lambda **kw: _search_result(),
+             propose_diagnosis=lambda **kw: None)
+    out = agent.run_agent("inc-c6", "billing", "t", "d")
+
+    assert "summarized on the last turn" in out
+    assert len(client.calls) <= agent.MAX_TURNS

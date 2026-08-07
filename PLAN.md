@@ -80,7 +80,7 @@ Bedrock half). **Demo:** the probe's `<->` query output pasted into WORKLOG.
   both are `NaN` today and AC13's entire honesty story is downstream of them.
 - Run the AC2 eval — **against the repaired eval set.** The old one scored string identity.
 
-`test:` `uv run pytest tests/retrieval_eval.py -s` → ≥18/20 top-3.
+`test:` `uv run pytest tests/test_retrieval_eval.py -s` → ≥18/20 top-3.
 **Demo:** the printed hit table. **Tag:** `p1-memory`.
 
 > **This is the first honest reading of retrieval quality this project has ever had.** If

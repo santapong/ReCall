@@ -24,13 +24,22 @@ from scrub import scrub
 # Confidence thresholds (AC13): tuned once in P1 against the seeded corpus, then
 # frozen — changing them later requires rerunning the full AC2 eval in the same
 # commit (docs/05). NaN = not yet tuned.
-CONF_HIGH_MAX_DIST = float(os.environ.get("CONFIDENCE_HIGH_MAX_DIST", "nan"))
-CONF_NONE_MIN_DIST = float(os.environ.get("CONFIDENCE_NONE_MIN_DIST", "nan"))
-DECAY_HALF_LIFE_DAYS = float(os.environ.get("DECAY_HALF_LIFE_DAYS", "90"))
+#
+# `or` not a get() default: an unset key and a key set to "" must behave the same.
+# .env.example ships these blank until P1 tuning, and blank env values are normal in
+# the Lambda console, so `float("")` would otherwise raise at import — every request
+# failing before any of our code runs, with the reason only in CloudWatch.
+CONF_HIGH_MAX_DIST = float(os.environ.get("CONFIDENCE_HIGH_MAX_DIST") or "nan")
+CONF_NONE_MIN_DIST = float(os.environ.get("CONFIDENCE_NONE_MIN_DIST") or "nan")
+DECAY_HALF_LIFE_DAYS = float(os.environ.get("DECAY_HALF_LIFE_DAYS") or "90")
 
 # Titan v2 with normalize:true gives unit vectors, so L2 distance is bounded by 2.
 # Used only to map a distance onto the 0..1 score the decay factor multiplies.
 MAX_L2_DIST = 2.0
+
+# Upper bound on the model-supplied `k` in search_incidents. Well above AC2's top-3
+# question and far below "the whole table".
+MAX_SEARCH_K = 20
 
 
 class Match(BaseModel):
@@ -123,6 +132,17 @@ _RUNBOOK_IDS_SQL = "SELECT id FROM runbooks WHERE service = %(service)s ORDER BY
 _RUNBOOK_SQL = "SELECT id, service, title, content FROM runbooks WHERE id = %(id)s"
 
 
+def clamp_k(k) -> int:
+    """Bound the model-supplied result count.
+
+    Parameterized SQL makes `k` injection-safe but not sane: k=100000 would pull the
+    whole service's history through the LIMIT and then into
+    working_state.retrieved_matches as JSONB. Non-integer input raises ValueError,
+    which _dispatch already feeds back to the model as a correctable error.
+    """
+    return max(1, min(int(k), MAX_SEARCH_K))
+
+
 def search_incidents(query: str, service: str, k: int = 5) -> SearchResult:
     """Embed query → vector search scoped to service → decay re-rank → matches +
     confidence label ('high' | 'low' | 'none', from the fixed thresholds above).
@@ -131,6 +151,7 @@ def search_incidents(query: str, service: str, k: int = 5) -> SearchResult:
     score = (1 - norm_distance) * exp(-age_days / half_life).
     Returns a SearchResult model. AC2, AC13.
     """
+    k = clamp_k(k)
     vector = to_vector_literal(embed(query))
     params = {"vec": vector, "service": service, "k": k}
 
@@ -210,12 +231,10 @@ _RECORD_RETRIEVAL_SQL = """
 """
 
 _CONFIDENCE_SQL = """
-    SELECT i.id, ws.confidence
+    SELECT i.id, ws.confidence, ws.retrieved_matches
     FROM incidents i LEFT JOIN working_state ws ON ws.incident_id = i.id
     WHERE i.id = %(id)s
 """
-
-_CITED_IDS_SQL = "SELECT id FROM incidents WHERE id = ANY(%(ids)s)"
 
 _PROPOSE_SQL = """
     INSERT INTO working_state (incident_id, proposed_diagnosis, updated_at)
@@ -400,8 +419,15 @@ def run_log(incident_id: str) -> list[dict]:
 
 def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list[str]) -> None:
     """Write working_state ONLY. cited_incident_ids must be non-empty unless
-    confidence == 'none' (AC3). Every ID is validated against the DB before the
-    write — an unknown ID raises and never persists.
+    confidence == 'none' (AC3). Every ID is validated before the write — an ID the
+    agent did not actually retrieve raises and never persists.
+
+    Citations are checked for *provenance*, not mere existence. Validating against
+    the whole incidents table (`WHERE id = ANY(...)`) only proves an ID is real, so
+    any incident in the corpus passed — including one from a different service the
+    agent never saw. Checking against this run's own retrieved_matches turns "the ID
+    exists" into "the agent could only cite what it actually retrieved", which is
+    the claim AC3 is worth making.
     """
 
     def _check():
@@ -412,14 +438,23 @@ def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list
             if row is None:
                 raise LookupError(f"no incident with id {incident_id!r}")
             confidence = row[1]
+            retrieved = row[2] or {}
             if cited_incident_ids:
-                cur.execute(_CITED_IDS_SQL, {"ids": list(cited_incident_ids)})
-                known = {str(r[0]) for r in cur.fetchall()}
+                # record_retrieval persists what search_incidents returned — the loop
+                # writes it, not the model, so it cannot be forged from inside the
+                # conversation.
+                known = {str(m.get("id")) for m in (retrieved.get("matches") or [])}
+                if not known:
+                    raise LookupError(
+                        "diagnosis cites incidents but nothing was retrieved for this "
+                        "run — call search_incidents before proposing (AC3)"
+                    )
                 unknown = [c for c in cited_incident_ids if c not in known]
                 if unknown:
                     raise LookupError(
-                        f"diagnosis cites unknown incident ids {unknown} — refusing to "
-                        "persist an invented citation (AC3)"
+                        f"diagnosis cites incident ids {unknown} that were not in this "
+                        "run's search results — refusing to persist a citation the "
+                        "agent did not retrieve (AC3)"
                     )
             elif confidence != "none":
                 raise ValueError(
