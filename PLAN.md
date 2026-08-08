@@ -12,8 +12,9 @@ design of record.*
 
 > **Partly superseded, 2026-08-08.** The second review (`GAPS_20260805`) is cleared in full, and
 > the credential-free half of M1–M2 now runs end to end on a local stack — see the two WORKLOG
-> entries for 2026-08-08. The count below is **115**, not 62. M0 is still the gate and the Nova
-> kill gate still fires **Aug 9**; everything else in this file stands.
+> entries for 2026-08-08. The status paragraphs below have been updated in place; the calendar,
+> budget, cut list and kill gates are unchanged. M0 is still the gate, and the Nova kill gate
+> still fires **Aug 9**.
 >
 > Materially changed: **AC3 is enforced on both halves** (incident *and* runbook citations,
 > provenance-checked against what the run actually retrieved), **propose-only is structural**
@@ -23,16 +24,23 @@ design of record.*
 > embeddings, no tuned thresholds, no honest AC2 reading, no deployed Lambda. M3's refusal
 > artifact is still unbuilt.
 
-**Built and green:** 62 tests (43 fast + 19 DB-backed, the latter running locally and in CI
-against a real single-node cockroach). The 4-tool manifest, the Converse loop, ingest +
-`/status` + `/health` + `/runlog`, the status page, the seed loader, the AC2 harness, the
-`agent_runs` decision log, the 3-node chaos rig — plus, executed after this plan was written:
-the `recall_app` least-privilege role (review's access-control item), the CI full-suite job,
-idempotent migrations, and the real-PIR corpus's credential-free half (10 sourced public
-postmortems in `infra/seed/pir_corpus.json`; only its embedding pass still waits on M1).
+**Built and green:** 115 tests (90 fast + 25 DB-backed, the latter running locally and in CI
+against a real single-node cockroach; a 116th, the AC2 eval, skips until a corpus is embedded).
+The 4-tool manifest, the Converse loop, ingest + `/status` + `/health` + `/runlog`, the status
+page, the seed loader, the AC2 harness, the `agent_runs` decision log, the 3-node chaos rig —
+plus, executed after this plan was written: the `recall_app` least-privilege role (review's
+access-control item), the CI full-suite job, idempotent migrations, and the real-PIR corpus's
+credential-free half (10 sourced public postmortems in `infra/seed/pir_corpus.json`) — plus, on
+2026-08-08, the whole `GAPS_20260805` clear and the M0′ local stack.
 
-**Not started:** every line of the live half. No Cloud cluster, no Bedrock access, zero
-embeddings written, `CONFIDENCE_HIGH_MAX_DIST` and `CONFIDENCE_NONE_MIN_DIST` still `NaN`.
+**Not started:** the live half. No Cloud cluster, no Bedrock access, no deployed Lambda, no
+AC1 latency measurement, and M3's refusal artifact unbuilt.
+
+**Partly done, and easy to misread as done:** the corpus *has* been embedded and both thresholds
+*do* have values — but from the local lexical stand-in, at `1.15` / `1.30`. Those numbers are
+provisional. The distance distribution under Titan is a different shape, so **both thresholds
+must be re-tuned and AC2 re-run before either means anything**, and `NaN` is the honest value to
+ship with until then. The first honest reading of retrieval quality has still not happened.
 
 **The uncomfortable fact:** `credentials` has been the standing `next:` in `WORKLOG.md`
 since **Jul 8** — four weeks. Nothing below matters if that stays true for a fifth.
