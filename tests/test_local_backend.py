@@ -211,3 +211,41 @@ def test_ingest_handler_runs_end_to_end_on_the_local_stack(monkeypatch, local_mo
     body = json.loads(resp["body"])
     assert body["incident_id"] == "inc-e2e"
     assert "confidence" in body["response"]
+
+
+# --- AC12: the amnesia arm is a real run, not a display toggle ---------------
+
+
+def test_memory_off_withholds_the_tools_entirely(monkeypatch, local_model):
+    """`?memory=off` used to be CSS that blanked a panel — filming that as an A/B
+    would have compared the page against itself. The arm now runs with no tools at
+    all (not tools that return nothing), so what appears is what an ungrounded model
+    actually says."""
+    recorded = []
+    monkeypatch.setattr(tools, "record_ungrounded_answer",
+                        lambda iid, text: recorded.append((iid, text)))
+    called = []
+    for name in tools.TOOL_MANIFEST:
+        monkeypatch.setitem(tools.TOOL_MANIFEST, name,
+                            lambda _n=name, **kw: called.append(_n))
+
+    out = agent.run_agent("inc-amnesia", "billing", "webhooks timing out", "p99 > 30s",
+                          memory=False)
+
+    assert not called, f"the amnesia arm reached memory: {called}"
+    assert recorded and recorded[0][0] == "inc-amnesia"
+    assert out == recorded[0][1] and out
+
+
+def test_memory_off_is_labelled_in_the_decision_log(monkeypatch, local_model):
+    monkeypatch.setattr(tools, "record_ungrounded_answer", lambda *a: None)
+    agent.run_agent("inc-amnesia-2", "billing", "t", "d", memory=False)
+    assert any("memory off" in s["name"] for s in local_model)
+
+
+def test_memory_on_is_still_the_default(monkeypatch, local_model):
+    """A missing query param must never silently select the ungrounded arm."""
+    monkeypatch.setitem(tools.TOOL_MANIFEST, "search_incidents",
+                        lambda **kw: _search_result("none", match_ids=(), runbook_ids=()))
+    agent.run_agent("inc-default", "billing", "t", "d")
+    assert any(s["step_type"] == "tool_call" for s in local_model)

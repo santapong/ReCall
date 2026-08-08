@@ -102,7 +102,14 @@
   // Config by query param — one page, zero build (docs/03).
   //   ?incident_id=INC-2094        which incident to watch (required)
   //   ?api=https://xyz.lambda-url  Function URL base (default: same origin)
-  //   ?memory=off                  AC12 amnesia view: memory panel empty
+  //   ?memory=off                  AC12 amnesia arm — a label, not a filter
+  //
+  // The flag no longer changes what this page displays. It used to blank the memory
+  // panel client-side, which would have filmed as an A/B while actually comparing the
+  // page against itself. The arm is now chosen at ingest (POST ?memory=off runs the
+  // agent with the memory tools withheld), so the ungrounded answer, its empty
+  // retrieval and its `none` confidence are real values read from working_state.
+  // All this flag does here is caption which arm you are looking at.
   const q = new URLSearchParams(location.search);
   const API = (q.get("api") || "").replace(/\/$/, "");
   const INCIDENT = q.get("incident_id") || "";
@@ -123,15 +130,13 @@
 
   function renderMemory(matchesJson) {
     const box = $("memory");
-    if (!MEMORY_ON) {
-      box.innerHTML = '<div class="empty">memory disabled — agent answers from the alert alone</div>';
-      return;
-    }
     let parsed = matchesJson;
     if (typeof parsed === "string") { try { parsed = JSON.parse(parsed); } catch { parsed = null; } }
     const matches = parsed && parsed.matches ? parsed.matches : [];
     if (!matches.length) {
-      box.innerHTML = '<div class="empty">no close match in memory — 0 incidents within threshold</div>';
+      box.innerHTML = MEMORY_ON
+        ? '<div class="empty">no close match in memory — 0 incidents within threshold</div>'
+        : '<div class="empty">memory withheld for this run — the agent answered from the alert alone</div>';
       return;
     }
     box.innerHTML = "";
@@ -158,12 +163,15 @@
       $("opened").textContent = "opened " + new Date(openedAt).toTimeString().slice(0, 5);
     }
     renderMemory(s.retrieved_matches);
+    // Both arms render whatever the database actually holds. The amnesia arm's
+    // 'none' and its ungrounded answer are real values written by the loop, so
+    // suppressing them here would be faking the very comparison being filmed.
     const badge = $("badge");
-    const conf = MEMORY_ON ? (s.confidence || "") : "";
+    const conf = s.confidence || "";
     badge.textContent = conf ? conf.toUpperCase() : "—";
     badge.className = "mono " + (conf || "none");
     const d = $("diagnosis");
-    if (s.proposed_diagnosis && MEMORY_ON) {
+    if (s.proposed_diagnosis) {
       d.textContent = s.proposed_diagnosis; d.className = "";
     }
     lastState = s;

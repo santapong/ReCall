@@ -15,15 +15,22 @@ ALERT = {
 }
 
 
+# Which arm each POST ran (AC12). Module-level so _wire keeps its two-value return
+# and the existing callers stay unchanged.
+memory_flags: list[bool] = []
+
+
 def _wire(monkeypatch):
     inserted, ran = [], []
+    memory_flags.clear()
 
     def fake_insert(external_id, service, title, description, severity):
         inserted.append(external_id)
         return "inc-uuid"
 
-    def fake_run(incident_id, service, title, description):
+    def fake_run(incident_id, service, title, description, *, memory=True):
         ran.append(incident_id)
+        memory_flags.append(memory)
         return "confidence high: diagnosis"
 
     monkeypatch.setattr(tools, "insert_incident", fake_insert)
@@ -153,3 +160,58 @@ def test_insert_failure_is_also_handled(monkeypatch):
 
     assert resp["statusCode"] == 500
     assert "connection refused" in json.loads(resp["body"])["detail"]
+
+
+# --- C5: shared-secret ingest, POST only -------------------------------------
+
+
+def test_ingest_token_is_required_when_configured(monkeypatch):
+    inserted, ran = _wire(monkeypatch)
+    monkeypatch.setenv("RECALL_INGEST_TOKEN", "s3cret")
+
+    denied = ingest_handler.handler({"body": json.dumps(ALERT)}, None)
+    assert denied["statusCode"] == 401
+    assert inserted == [] and ran == []  # no DB touch, no Bedrock spend
+
+    wrong = ingest_handler.handler(
+        {"body": json.dumps(ALERT), "headers": {"x-recall-token": "nope"}}, None)
+    assert wrong["statusCode"] == 401
+
+    ok = ingest_handler.handler(
+        {"body": json.dumps(ALERT), "headers": {"X-Recall-Token": "s3cret"}}, None)
+    assert ok["statusCode"] == 200  # header match is case-insensitive
+
+
+def test_reads_stay_open_when_the_token_is_configured(monkeypatch):
+    """POST-only by design — the status page has no way to hold a secret, and reads
+    are public for the demo (named in the README)."""
+    monkeypatch.setenv("RECALL_INGEST_TOKEN", "s3cret")
+    monkeypatch.setattr(tools, "health", lambda: {"incidents": 92})
+    monkeypatch.setattr(tools, "run_log", lambda iid: [])
+
+    assert ingest_handler.handler(_get_event("/health"), None)["statusCode"] == 200
+    assert ingest_handler.handler(
+        _get_event("/runlog", {"incident_id": "inc-1"}), None)["statusCode"] == 200
+
+
+def test_no_token_configured_means_open(monkeypatch):
+    _wire(monkeypatch)
+    monkeypatch.delenv("RECALL_INGEST_TOKEN", raising=False)
+    assert ingest_handler.handler({"body": json.dumps(ALERT)}, None)["statusCode"] == 200
+
+
+def test_memory_off_query_param_selects_the_amnesia_arm(monkeypatch):
+    """AC12 reaches the loop as a real parameter, not a CSS class in the browser."""
+    _wire(monkeypatch)
+    ingest_handler.handler(
+        {"body": json.dumps(ALERT), "queryStringParameters": {"memory": "off"}}, None)
+    assert memory_flags == [False]
+
+
+def test_memory_defaults_on(monkeypatch):
+    """Anything other than exactly "off" — including absent — runs the grounded arm."""
+    _wire(monkeypatch)
+    ingest_handler.handler({"body": json.dumps(ALERT)}, None)
+    ingest_handler.handler(
+        {"body": json.dumps(ALERT), "queryStringParameters": {"memory": "on"}}, None)
+    assert memory_flags == [True, True]

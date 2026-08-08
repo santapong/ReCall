@@ -223,6 +223,17 @@ def local_converse(messages):
     })
 
 
+def local_converse_no_memory():
+    """The amnesia arm on the local backend: a generic, ungrounded answer of the kind
+    a model with no incident history produces. Same caveat as local_converse — this
+    is scaffolding for wiring, not evidence about any model."""
+    return {"output": {"message": {"role": "assistant", "content": [{"text":
+        "Without access to prior incidents I can only suggest general steps: check "
+        "the service logs around the alert window, review recent deploys, and "
+        "restart the affected workers if latency persists. (local backend)"}]}},
+        "usage": {"inputTokens": 0, "outputTokens": 0}}
+
+
 def _converse(system, messages, log: "_RunLog"):
     """One Bedrock turn, timed and logged. Token counts come from the Converse
     response's usage block — cost is an NFR, so it is recorded, not estimated."""
@@ -243,11 +254,19 @@ def _converse(system, messages, log: "_RunLog"):
     return resp
 
 
-def run_agent(incident_id: str, service: str, title: str, description: str) -> str:
+def run_agent(incident_id: str, service: str, title: str, description: str,
+              *, memory: bool = True) -> str:
     """Drive Claude on Bedrock over the 4-tool manifest until it proposes a
     diagnosis (AC3) or states confidence 'none' plainly and stops (AC13).
     Returns the model's final text. Bedrock throttling gets the with_retry shape;
     after max attempts the run fails visibly — never a silent degrade (docs/02).
+
+    memory=False is AC12's amnesia arm: the same alert, the same model, the same
+    prompt, with the memory tools withheld — so the model has nothing but the alert
+    text and must answer from parametric knowledge alone. Previously `?memory=off`
+    was a CSS toggle that blanked a panel in the browser, which would have filmed as
+    an A/B while actually comparing a page against itself. This runs the other arm
+    for real; the difference on screen is the difference the product makes.
     """
     if not MODEL_ID and BEDROCK_BACKEND != "local":
         raise RuntimeError("BEDROCK_MODEL_ID is unset — record the verified ID per docs/04")
@@ -258,6 +277,23 @@ def run_agent(incident_id: str, service: str, title: str, description: str) -> s
     })}]}]
     proposed = False
     log = _RunLog(incident_id)
+
+    if not memory:
+        # No tools at all — not "tools that return nothing". The distinction matters:
+        # the amnesia arm must show what an ungrounded model says, not a grounded one
+        # reporting an empty search.
+        started = time.perf_counter()
+        resp = with_throttle_retry(lambda: get_client().converse(
+            modelId=MODEL_ID, system=system, messages=messages,
+        )) if BEDROCK_BACKEND != "local" else local_converse_no_memory()
+        usage = resp.get("usage") or {}
+        log.step("model_turn", (MODEL_ID or "local-scripted") + " (memory off)",
+                 "success", _ms(started),
+                 input_tokens=usage.get("inputTokens"),
+                 output_tokens=usage.get("outputTokens"))
+        text = "".join(c.get("text", "") for c in resp["output"]["message"]["content"]).strip()
+        tools.record_ungrounded_answer(incident_id, text)
+        return text
 
     # One turn is reserved for the closing summary that follows a successful
     # propose_diagnosis, so MAX_TURNS is the real ceiling on Converse calls rather

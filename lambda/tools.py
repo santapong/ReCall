@@ -230,6 +230,15 @@ _RECORD_RETRIEVAL_SQL = """
             updated_at = now()
 """
 
+_UNGROUNDED_SQL = """
+    INSERT INTO working_state (incident_id, proposed_diagnosis, confidence,
+                               retrieved_matches, updated_at)
+    VALUES (%(incident_id)s, %(diagnosis)s, 'none', NULL, now())
+    ON CONFLICT (incident_id) DO UPDATE
+        SET proposed_diagnosis = excluded.proposed_diagnosis,
+            confidence = 'none', retrieved_matches = NULL, updated_at = now()
+"""
+
 _CONFIDENCE_SQL = """
     SELECT i.id, ws.confidence, ws.retrieved_matches
     FROM incidents i LEFT JOIN working_state ws ON ws.incident_id = i.id
@@ -317,6 +326,25 @@ def insert_incident(external_id: str, service: str, title: str, description: str
         return incident_id
 
     return db.with_retry(_write)
+
+
+def record_ungrounded_answer(incident_id: str, answer: str) -> None:
+    """AC12's amnesia arm: persist what the model said with the memory tools withheld
+    (non-manifest — the loop calls this, never the model).
+
+    Written as confidence 'none' with no retrieved_matches, which is exactly what it
+    is: an answer with no evidence behind it. The status page then renders the two
+    arms from the same schema, so the A/B compares two real runs rather than a page
+    against itself.
+    """
+    params = {"incident_id": incident_id, "diagnosis": answer}
+
+    def _write():
+        conn = db.get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_UNGROUNDED_SQL, params)
+
+    db.with_retry(_write)
 
 
 def record_retrieval(incident_id: str, result: SearchResult) -> None:

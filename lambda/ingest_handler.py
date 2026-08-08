@@ -9,6 +9,7 @@ handling).
 
 import base64
 import json
+import os
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -59,6 +60,17 @@ def handler(event, context):
                                    "steps": tools.run_log(incident_id)})
         return _response(404, {"error": "unknown path"})
 
+    # POST spends Bedrock tokens on an unauthenticated public URL, so it takes a
+    # shared secret when one is configured. Deliberately POST-only: the status page
+    # must keep reading /status and /runlog without one. Absent env var = open, which
+    # is what local development and the test suite run with. This bounds casual abuse
+    # of the URL; it is not an identity system, and the README says so.
+    expected = os.environ.get("RECALL_INGEST_TOKEN")
+    if expected:
+        headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        if headers.get("x-recall-token") != expected:
+            return _response(401, {"error": "missing or invalid x-recall-token"})
+
     raw = event.get("body") or ""
     if event.get("isBase64Encoded"):
         raw = base64.b64decode(raw).decode("utf-8")
@@ -75,7 +87,11 @@ def handler(event, context):
         incident_id = tools.insert_incident(
             alert.external_id, alert.service, alert.title, alert.description, alert.severity,
         )
-        diagnosis = run_agent(incident_id, alert.service, alert.title, alert.description)
+        # AC12: ?memory=off runs the same alert through the same model with the memory
+        # tools withheld. It is a real second arm, not a display toggle.
+        memory_on = (event.get("queryStringParameters") or {}).get("memory") != "off"
+        diagnosis = run_agent(incident_id, alert.service, alert.title, alert.description,
+                              memory=memory_on)
     except Exception as exc:
         return _response(500, {"error": "diagnosis failed",
                                "detail": f"{type(exc).__name__}: {exc}"})
