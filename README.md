@@ -206,8 +206,8 @@ this is what each one does.
 |---|---|---|
 | `search_incidents` | vector search + decay re-rank | returns an explicit confidence label: `high` / `low` / `none` |
 | `get_runbook` | fetch one runbook by ID | read-only, no search — IDs come from search results only |
-| `propose_diagnosis` | record the diagnosis | writes *working memory only*; cited IDs validated against the DB — an unknown ID raises, never persists |
-| `write_incident` | close + write back the fix | blameless scrub first: names, @handles, emails never persist |
+| `propose_diagnosis` | record the diagnosis | writes *working memory only*; every cited incident **and runbook** ID is checked against what this run actually retrieved — an ID the agent did not pull raises, and nothing persists |
+| `write_incident` | close + write back the fix | blameless scrub first: names, @handles, emails never persist. **Not offered to the diagnosis loop at all** — a human runs [`scripts/close.py`](scripts/close.py) |
 
 ## What we don't claim
 

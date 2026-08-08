@@ -10,6 +10,19 @@ design of record.*
 
 ## Where this actually stands
 
+> **Partly superseded, 2026-08-08.** The second review (`GAPS_20260805`) is cleared in full, and
+> the credential-free half of M1–M2 now runs end to end on a local stack — see the two WORKLOG
+> entries for 2026-08-08. The count below is **115**, not 62. M0 is still the gate and the Nova
+> kill gate still fires **Aug 9**; everything else in this file stands.
+>
+> Materially changed: **AC3 is enforced on both halves** (incident *and* runbook citations,
+> provenance-checked against what the run actually retrieved), **propose-only is structural**
+> (`write_incident` is not offered to the diagnosis loop; `scripts/close.py` is the human path),
+> the `recall_app` role is exercised rather than asserted, AC5/AC11/AC12 have real mechanisms,
+> and the status page renders the real `agent_runs` decision log. **Not** changed: no Titan
+> embeddings, no tuned thresholds, no honest AC2 reading, no deployed Lambda. M3's refusal
+> artifact is still unbuilt.
+
 **Built and green:** 62 tests (43 fast + 19 DB-backed, the latter running locally and in CI
 against a real single-node cockroach). The 4-tool manifest, the Converse loop, ingest +
 `/status` + `/health` + `/runlog`, the status page, the seed loader, the AC2 harness, the
@@ -94,8 +107,12 @@ Bedrock half). **Demo:** the probe's `<->` query output pasted into WORKLOG.
 
 ### M2 · Agent live — Aug 8–12 · 8h · AC1, AC3, AC4
 
-- `make deploy`; create the Function URL; set env vars (model IDs, thresholds, conn string).
+- `make create-function` (one-time: IAM role + the function; `make deploy` only *updates* one),
+  which chains `deploy-config` (timeout/memory/env/concurrency) and `function-url`.
 - `curl` all 20 alerts end-to-end. Assert AC1 latency < 5s and **zero invented IDs**.
+  Warm the function with a `/health` GET immediately before measuring — a cold start with
+  pydantic-core + psycopg[binary] + a TLS handshake will not be under 5s, and stating a real
+  7s beats claiming a 5s you missed.
 - Confirm `agent_runs` fills: `GET /runlog?incident_id=…` returns an ordered step list
   with real latencies and token counts.
 
@@ -129,7 +146,10 @@ unchanged.
 
 - Migrate + seed a subset into the 3-node docker rig.
 - **Shot 2 (the refusal)** — record until clean. Highest-value 27 seconds in the video.
-- Node-kill take: in-flight diagnosis, `docker stop recall-crdb-2`, row counts identical.
+- Node-kill take: export the **multi-host** string (`make chaos-conn`), in-flight diagnosis,
+  `docker stop recall-crdb-1` — the node the connection is actually on — row counts identical.
+  Killing crdb-2 while connected to crdb-1 never broke the connection, so the reconnect arm
+  never fired and the shot proved nothing.
 - `AS OF SYSTEM TIME` on `working_state`, then `/runlog` — both on camera.
 - Close → retrieve take. Amnesia A/B (`?memory=off`).
 - **One CockroachDB MCP query on camera** — five seconds, removes Stage One ambiguity.

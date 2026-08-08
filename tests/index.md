@@ -14,8 +14,17 @@ pytest is ground truth (docs/06). Fast structural tests run everywhere; DB-backe
 | `test_ingest_handler.py` | **AC1** mechanics — validate, dedupe path, 400 on garbage; offline | live |
 | `test_pir_corpus.py` | Real-PIR track guards — 10+ sourced public postmortems, blameless, isolated in service 'public', AC2 set untouched | live |
 | `test_retrieval_eval.py` | **AC2** — 20 alerts, ≥18 top-3 vs the live index, prints the hit table | harness ready — runs once the corpus is embedded (skips with the reason until then) |
-| `test_tools_write.py` | **AC3** — fake ID raises, never persists; **AC5** close path scrub+embed+resolve; **AC1** idempotent ingest. Needs the local node (skips without `CRDB_CONN_STRING`) | live |
+| `test_tools_write.py` | **AC3** — citations provenance-checked against the run's own retrieved matches, both the incident and runbook halves; **AC5** close path scrub+embed+resolve; **AC1** idempotent ingest. Needs the local node (skips without `CRDB_CONN_STRING`) | live |
+| `test_app_role.py` | **Production Readiness** — connects *as* `recall_app` and proves the grants: reads all three layers, cannot DELETE, cannot write `runbooks`, cannot run DDL | live (skips without a cluster) |
+| `test_env_config.py` | The quickstart's own trap (**AC9**) — a blank env var must behave like an unset one, or `cp .env.example .env` detonates every import | live |
+| `test_local_backend.py` | **M0'** — the credential-free stack: unit-norm vectors of the real width, deterministic across processes, opt-in only, a loop that reaches a grounded diagnosis with zero AWS; plus **AC12**'s amnesia arm | live |
 
 ## Invariants
 - Every test file names its AC (or hard rule) in its docstring and in this table.
 - Fixtures load the deterministic corpus; the RNG seed never changes after P1.
+- **Test files must match `test_*.py` or pytest silently never collects them.** Not hypothetical:
+  `retrieval_eval.py` was AC2's only gate and was collected by nothing — not `make test`, not
+  either CI job — for as long as it carried that name.
+- DB-backed teardown deletes `agent_runs` → `working_state` → `incidents`, in that order. The FK
+  ordering matters, and a failed teardown leaks rows that then surface as retrievable memory
+  (`make local-clean`).

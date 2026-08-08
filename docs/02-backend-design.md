@@ -66,6 +66,8 @@ CREATE TABLE working_state (
     retrieved_matches JSONB,
     proposed_diagnosis STRING,
     confidence STRING,                -- 'high' | 'low' | 'none' (AC13)
+    cited_runbook_ids JSONB,          -- migration 0004: AC3's runbook half, validated
+                                      -- against the runbook_ids this run retrieved
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
@@ -107,14 +109,29 @@ get_runbook(runbook_id: str) -> Runbook
     Read-only fetch by ID. No search.
 
 propose_diagnosis(incident_id: str, diagnosis: str,
-                  cited_incident_ids: list[str]) -> None
-    Writes working_state ONLY. cited_incident_ids must be non-empty
-    unless confidence == 'none' (AC3). IDs are validated against the DB
-    before write — an unknown ID raises, never persists.
+                  cited_incident_ids: list[str],
+                  cited_runbook_ids: list[str] | None = None) -> None
+    Writes working_state ONLY. Both citation lists must be non-empty
+    unless confidence == 'none'. AC3 is "a real incident ID + a runbook
+    step" (docs/01:48); the runbook half was prompt-only until migration
+    0004 added working_state.cited_runbook_ids.
+
+    Validation is PROVENANCE, not existence (corrected 2026-08-08). Both
+    lists are checked against this run's own retrieved_matches, which the
+    loop persists via record_retrieval — not against the whole table.
+    Existence alone only proved an ID was real, so an incident from a
+    service the agent never searched passed just as easily.
 
 write_incident(incident_id: str, resolution_summary: str) -> None
     Close path. Runs the blameless scrub before persisting, then embeds
     the resolution so the very next similar alert can retrieve it (AC5).
+
+    NOT REACHABLE FROM THE DIAGNOSIS LOOP (2026-08-08). It stays in the
+    manifest — AC4 counts the manifest — but is filtered out of the
+    toolConfig run_agent sends, and _dispatch refuses it outright. Its
+    only caller is scripts/close.py, run by a human. Before this,
+    "propose-only" was a sentence in prompts/system.md while the tool was
+    offered to the model on every Converse call.
 ```
 
 The agent's system prompt (versioned in `prompts/`) hard-requires: state the confidence label before proposing anything; when `none`, say plainly that no close match exists and stop.
@@ -124,8 +141,9 @@ The agent's system prompt (versioned in `prompts/`) hard-requires: state the con
 1. Alert POSTs to Function URL → dedupe on `external_id` → insert `incidents` + `working_state`, invoke agent — **AC1**
 2. Agent → `search_incidents` — **AC2, AC13**
 3. Agent → `propose_diagnosis` with validated citations — **AC3, AC4**
-4. Status page polls `GET /status` (Lambda read path over `working_state` + `incidents`) — surface only
-5. Close → `write_incident` → scrub → embed → persist — **AC5**, and the next similar alert finds it
+4. Status page polls `GET /status` **and** `GET /runlog` (Lambda read paths over `working_state` + `incidents`, and over `agent_runs`) — surface only
+5. Close → a human runs `scripts/close.py` → `write_incident` → scrub → embed → persist — **AC5**, and the next similar alert finds it. The agent has no path to this step
+6. Amnesia arm: `POST ?memory=off` → `run_agent(memory=False)` → no tools offered → `record_ungrounded_answer` writes the result as `confidence='none'` with no matches — **AC12**, two real runs rather than a display toggle
 
 ## Seed data spec (P1)
 

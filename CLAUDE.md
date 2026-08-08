@@ -35,10 +35,13 @@ Top-level folder indexes (read the folder's `index.md` before working in it): `.
 7. **Behind schedule cuts scope, never the date.** Cut order: UI polish → seed volume → tool breadth. Never cut: chaos demo, write-back, video, on-time submit. Target submit **Aug 17 night ICT**; hard wall **Aug 19, 04:00 ICT** (= Aug 18, 5 pm EDT) — `docs/08`.
 8. **Index or it doesn't exist.** Every new folder or subsystem ships an `index.md` (template in `docs/06`) and registers in its parent index — and in this read-order table if it's top-level — in the same commit. Navigate by index; never bulk-load the repo to orient. *Amended 2026-08-02*: **asset-only folders** (`docs/diagrams/` — SVG and nothing else) carry no `index.md`; the parent index describes every file instead. The rule's purpose is that nothing is undiscoverable, and a one-format asset folder is better served by one table upstream than by a stub file inside it.
 
-## Current state (2026-08-04)
+## Current state (2026-08-08)
 
+- **The system has run end to end** — on the credential-free local stack (M0′), not on the cloud. `EMBED_BACKEND=local` and `BEDROCK_BACKEND=local` are explicit opt-ins (never inferred from a missing credential) replacing Titan and Converse with a deterministic stand-in, so the loop, the decision log, the read paths and the status page are exercisable today: 92 documents embedded, POST → 200, `/status` + `/runlog` answering, close → retrieve verified. **The stand-in is lexical, not semantic** — its retrieval scores and any thresholds tuned on it are provisional, do not transfer to Titan, and nothing filmed may run on it.
+- **The second review (`GAPS_20260805`) is cleared in full.** Load-bearing changes: propose-only is structural (`write_incident` is filtered out of the diagnosis `toolConfig`, not merely forbidden by the prompt); citations are provenance-checked against what the run actually retrieved, on **both** halves of AC3 (incident + runbook, migration 0004); `recall_app` is exercised by `tests/test_app_role.py` rather than asserted in prose; AC5/AC11/AC12 have real mechanisms (`scripts/close.py`, `scripts/timetravel.sql`, a real memory-off arm); the status page renders `agent_runs` instead of a log inferred in the browser. Details in the 2026-08-08 WORKLOG entries and CHANGELOG.
+- **Still credential-gated, and that is now the entire critical path:** no Titan embeddings, no tuned thresholds, no honest AC2 reading, no deployed Lambda, no AC1 latency measurement. The Nova kill gate (`PLAN.md`) fires **Aug 9**.
 - **All application code is built and offline-verified; cloud credentials are the only gate.** The 4-tool surface (read + write), the Converse loop, ingest + `GET /status`/`/health`, the status page, the seed loader (`infra/seed/load.py`), the AC2 eval harness, the `agent_runs` decision log (+ `GET /runlog`), the AC7 chaos rig (`infra/chaos/`, kill rehearsed), the `recall_app` least-privilege role, and the 10-PIR real-postmortem corpus (`infra/seed/pir_corpus.json`, service `public`, AC2-isolated) all exist. Suite: 115 green (CI runs the full DB-backed suite on PRs and develop/release pushes); DB-backed tests run against a real local single-node (v25.2.2, user-space install; probe answer: vector index = flag-then-works, recorded in `docs/02`).
-- Still awaiting the human: CockroachDB Cloud cluster + MCP service-account key, AWS keys + Bedrock model-access grant (`scripts/probe_runbook.md` steps A–C). Then, in order: Cloud probe/migrate → `probe_bedrock.py` → `load.py` → tune the two thresholds → AC2 eval → `make deploy` → live end-to-end.
+- Still awaiting the human: CockroachDB Cloud cluster + MCP service-account key, AWS keys + Bedrock model-access grant (`scripts/probe_runbook.md` steps A–C). Then, in order: Cloud probe/migrate → `probe_bedrock.py` → `load.py` → tune the two thresholds (the local ones are provisional and do not transfer) → AC2 eval → `make create-function` → `make deploy` → live end-to-end.
 - One open decision marker: embedding dimension, expected `1024`, resolved in-file the day `probe_bedrock.py` prints it. D1–D4 are otherwise closed (`docs/08`).
 - Source artifacts (charter HTML v1, council report, pitch panel, original design doc) belong in `docs/plans/` — the human drops them in; where they disagree with this pack, this pack wins.
 
@@ -55,8 +58,15 @@ make migrate            # apply infra/migrations/*.sql in order
 uv run python infra/seed/generate.py   # regenerate corpus + eval fixtures (make seed)
 uv run python infra/seed/load.py       # embed + upsert the corpus (needs Bedrock creds)
 uv run pytest tests/test_retrieval_eval.py -s   # AC2 eval — runs once corpus is embedded
-make chaos-up / chaos-down             # AC7 3-node kill rig (Docker)
-make deploy             # bundle deps + prompts + code, update the Lambda
+make local-load         # embed + load the corpus with the local stand-in (no AWS)
+make local-e2e          # POST an alert through the real handler on the local stack
+make local-eval         # AC2 eval on the local stack — prints PROVISIONAL, and means it
+make local-clean        # drop test/ad-hoc rows; leaked ones are RETRIEVABLE and pollute results
+make chaos-up / chaos-conn / chaos-down   # AC7 3-node kill rig (Docker); kill crdb-1
+uv run python scripts/close.py <id> "<resolution>"   # AC5 — the only caller of write_incident
+psql -v id="'<id>'" -f scripts/timetravel.sql        # AC11 — capture the timestamp first
+make create-function    # ONE-TIME: IAM role + the Lambda itself (deploy only updates)
+make deploy             # bundle deps + prompts + code, update the Lambda + its config
 scripts/wt.sh new feat/<slug>          # branch + worktree per docs/07 (base: develop)
 ```
 

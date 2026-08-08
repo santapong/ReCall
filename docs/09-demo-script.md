@@ -66,18 +66,33 @@ yet — shot 2 is the explanation.
 > service. Right, with memory: the actual root cause from the last time this exact
 > failure happened, and the step that resolved it. The difference isn't the model.
 
+**Staging (changed 2026-08-08):** fire *two* alerts — one `POST ?memory=off`, one without —
+then open each incident on the page. The flag now reaches the loop: `run_agent(memory=False)`
+withholds the tools entirely, and `record_ungrounded_answer` persists the result as
+`confidence='none'` with no matches. Both panes are therefore real runs read from the same
+schema. It was previously a CSS toggle that blanked a panel, which would have filmed as an
+A/B while actually comparing the page against itself; the left pane's line is now an output,
+not a script direction.
+
 ## 4 · Node kill — 1:18–1:48 · AC7
 
 **Screen:** status page full, clock ticking; terminal overlay for the kill.
 
 > Memory this thing depends on had better not go down with the system it's diagnosing.
 > A diagnosis is in flight — and I'm killing a database node. Now.
-> *(docker stop recall-crdb-2 — clock keeps ticking)*
+> *(docker stop recall-crdb-1 — clock keeps ticking)*
 > The clock never stopped. The answer lands. Row counts before and after: identical.
 > That's not a backup restoring. That's the database not going down.
 
 **Note:** the claim is scoped deliberately — *survives node loss*, not *everyone else's
 setup is broken*. The README's "What we don't claim" section says the same in writing.
+
+**Setup (corrected 2026-08-08):** export the **multi-host** connection string first
+(`make chaos-conn`) and kill **crdb-1**, the node the connection is actually on. The rig
+previously printed a single-host string for crdb-1 while the script killed crdb-2, so the
+connection never broke, `db.with_retry`'s reconnect arm never fired, and the shot proved
+nothing. Killing crdb-1 against a single-host string breaks it permanently instead — hence
+all three hosts.
 
 ## 5 · Close → retrieve — 1:48–2:08 · AC5
 
@@ -87,9 +102,21 @@ setup is broken*. The README's "What we don't claim" section says the same in wr
 > back. Next similar alert — *(fire it)* — the incident we just closed is the top match.
 > Every resolved incident makes the next one faster.
 
+**The close command (added 2026-08-08):** `uv run python scripts/close.py <id> "<resolution>"`.
+This is the *only* caller of `write_incident` — the diagnosis loop is not offered the tool at
+all, so "you propose, humans dispose" is enforced by there being no path from the model to
+this command. Rehearsed locally: a resolution closed this way came back as the top match at
+distance 0.87 against a corpus whose next-best was 1.24.
+
 ## 6 · Time travel + decision log — 2:08–2:32 · AC11
 
 **Screen:** terminal, `AS OF SYSTEM TIME` query via the MCP dev surface, then `/runlog`.
+
+**The query (added 2026-08-08):** `scripts/timetravel.sql`. Run step 1 to capture
+`cluster_logical_timestamp()` **before** firing the alert, and read at that captured value —
+*not* at a relative `AS OF SYSTEM TIME '-10m'`, which returns zero rows against a
+two-minute-old incident, live, on camera. Check `gc.ttlseconds` on the tier first. Rehearsed:
+0 decision-log steps at the captured moment, 7 now.
 
 > Every diagnosis is auditable twice over. What did memory *believe* at 02:14?
 > One `AS OF SYSTEM TIME` query — the working state exactly as the agent saw it,

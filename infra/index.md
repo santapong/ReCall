@@ -8,7 +8,22 @@ Schema truth and the deterministic seed corpus. Applied by `make migrate` / gene
 | `seed/` | Orbital corpus generator (P1) — see `seed/index.md` | At P1, before seeding |
 | `chaos/` | AC7 kill rig: 3-node compose, `make chaos-up`/`chaos-down` — see `chaos/index.md` | P4 rehearsal |
 
+## Migrations, in order
+| file | what it adds |
+|---|---|
+| `0001_init.sql` | The three memory layers: `incidents`, `runbooks`, `working_state`, both vector indexes |
+| `0002_agent_runs.sql` | The replayable decision log — observability, not memory |
+| `0003_app_role.sql` | `recall_app` least-privilege role. Also grants `CONNECT`/`USAGE` (without which it could not open a session at all) and **revokes `CREATE` from the `public` pseudo-role**, without which "no DDL" was not true |
+| `0004_cited_runbooks.sql` | `working_state.cited_runbook_ids` — AC3's runbook half, validated against what the run retrieved |
+
 ## Invariants
 - Schema changes update `schema.sql` AND add a numbered migration in the same commit.
+- Every migration is idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`): CI and dev share one
+  entry point and re-run it.
+- `make migrate` runs `psql -v ON_ERROR_STOP=1 … || exit 1`. Without both, a failed statement still
+  exited 0, so "migrate passed" was not evidence the schema existed.
+- Test and ad-hoc rows leak into whatever cluster is pointed at, and any that reached
+  `write_incident` are `resolved` with an embedding — i.e. **retrievable**, and they surface as
+  memory matches. Run `make local-clean` before filming or before trusting a retrieval number.
 - `VECTOR(1024)` carries a DECISION PENDING PROBE marker — resolve in `schema.sql`, `migrations/0001_init.sql`, and docs/02 together, the day the embedding dimension is confirmed.
 - SQL write statements are allowed here and in `lambda/tools.py`, nowhere else (tested).

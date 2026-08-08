@@ -10,6 +10,89 @@ below are those criteria, defined in [`docs/01-objective-roadmap.md`](docs/01-ob
 
 ## [Unreleased]
 
+### 2026-08-08 — second review cleared; the system runs without credentials
+
+Clears `GAPS_20260805` end to end. Every claim was re-verified against the code before any change;
+all held except one (its `embed.py:30` cite was wrong — `EMBED_DIM` was already populated).
+Suite: 62 → 115.
+
+#### Fixed — the live run did not work
+- **Lambda runtime pin.** The deploy built Python **3.13** wheels while nothing set the function's
+  runtime; compiled `.so` files (psycopg, pydantic-core) do not import across minor versions, so a
+  cold start would have died before any of our code ran, with the reason only in CloudWatch.
+  `PY_VERSION`/`PY_RUNTIME` now drive both the wheel build and `--runtime`.
+- **`make deploy` configured nothing** — no timeout (3 s default, against a loop making 2–13
+  Bedrock round trips), no memory, no env vars, no Function URL. Added `deploy-config`
+  (timeout 60, 1024 MB, env, reserved concurrency 5) and `function-url`.
+- **Blank env vars detonated every import.** `os.environ.get(k, "nan")` returns its default only
+  when the key is *absent*; `.env.example` ships the thresholds **empty**, so `float("")` raised at
+  import — the documented quickstart broke the repo (AC9), and blank values are normal in the
+  Lambda console. Now `or`-guarded, with `tests/test_env_config.py`.
+- **No CORS header**, so the status page could never read the Function URL from `file://` or GitHub
+  Pages — the primary on-camera surface would have shown "waiting for incident…" forever.
+- **`make migrate` and `make probe` could not fail.** `psql` ran without `ON_ERROR_STOP=1` inside a
+  `for` loop, so a migration whose every statement errored still exited 0; "migrate passed" was not
+  evidence the schema existed. Verified: exit 2 on a broken migration, 0 when clean.
+- **Three uncaught-exception paths returned bare 502s.** The manifest lookup sat outside its `try`,
+  the catch was too narrow for a `TypeError`, and the POST branch had no handler at all.
+
+#### Changed — claims made true
+- **Propose-only is now structural.** `write_incident` — which does
+  `UPDATE incidents SET status='resolved', embedding=…` — was passed to *every* Converse call, with
+  only a prompt sentence forbidding its use, so the model could have fabricated a resolution and
+  poisoned the vector future retrievals match against. It is now filtered out of the diagnosis
+  `toolConfig` and refused by `_dispatch`; the close path is `scripts/close.py`, run by a human.
+  The manifest still holds four tools — AC4 counts the manifest.
+- **Citations are provenance-checked, not existence-checked.** Validating against the whole
+  `incidents` table only proved an ID was real, so an incident from a service the agent never
+  searched passed. Both lists are now checked against this run's own `retrieved_matches`.
+- **AC3's runbook half exists.** `docs/01:48` always required "≥1 incident ID **+ ≥1 runbook
+  step**", but `propose_diagnosis` took no runbook parameter. Migration **0004** adds
+  `cited_runbook_ids`, validated the same way and required on every `high`/`low` branch.
+- **`recall_app` is exercised, not asserted.** Running the suite *as* the role found two holes that
+  made the README's access-control paragraph untrue: no `CONNECT`/`USAGE` (so it could never have
+  connected at all) and inherited `CREATE` from the `public` pseudo-role, so "no DDL" was false.
+  Both fixed in 0003; `tests/test_app_role.py` proves all five properties.
+- **AC2 had no verification path.** `pyproject.toml` sets `testpaths` but not `python_files`, so
+  `tests/retrieval_eval.py` was collected by *nothing* — not `make test`, not either CI job — while
+  the README called it the gate. Renamed to `test_retrieval_eval.py`.
+- The scrubber ate operational vocabulary: `"Token grace period expired"` →
+  `"Token [redacted] period expired"`. `SAFE_PHRASES` protects it without weakening name matching,
+  which the adversarial set requires to stay case-insensitive.
+- Bedrock backoff 3×0.2 s (~0.6 s total) → 5×1.0 s; model-supplied `k` clamped to 20; `MAX_TURNS`
+  is now the real Converse ceiling rather than one below it; the seed loader's retry captured a
+  cursor `close_conn()` had already killed, so it could never have succeeded.
+- CI's full DB-backed job now runs on **pull requests**, where the invariants can actually break.
+
+#### Added
+- **Credential-free local stack (M0′).** `EMBED_BACKEND=local` and `BEDROCK_BACKEND=local` — opt-in
+  by exact value, never inferred from a missing credential, loud on stderr and in the decision log.
+  Produced the **first end-to-end run in the project's history**: 92 documents embedded, POST → 200,
+  decision log filled, `/status` and `/runlog` answering. The embedder is **lexical, not semantic**,
+  so its scores and any thresholds tuned on it are provisional and do not transfer to Titan; the
+  AC2 table prints `PROVISIONAL`.
+- **`scripts/close.py`** (AC5's trigger), **`scripts/timetravel.sql`** (AC11 — captures a real
+  `cluster_logical_timestamp()`; the scripted `'-10m'` returns zero rows against a two-minute-old
+  incident, live, on camera), **`scripts/local_e2e.py`**, and `make local-load/e2e/eval/clean`.
+- **`make create-function`** — the execution role and the Lambda itself. `make deploy` only ever ran
+  `update-function-code`, which fails if the function does not exist, and nothing created it.
+- **AC12's amnesia arm is real.** `?memory=off` was a CSS toggle that blanked a panel; filming it
+  would have compared the page against itself. It now reaches the loop, which withholds the tools
+  entirely and persists the ungrounded answer as `confidence='none'`.
+- **The status page renders the real decision log.** The event log was built from state deltas
+  observed in the browser — it looked like a system log, every line was inferred, and it could never
+  show the `error` rows that *are* the refusal proof. It now polls `GET /runlog`.
+
+#### Fixed — found by opening the page in a browser
+- The live indicator read `● live` for a nonexistent incident, because `/runlog` answers 200 with an
+  empty list by design — the exact failure the indicator had been added to prevent.
+- Twelve leaked `test-<uuid>` rows, one `resolved` with an embedding and therefore **retrievable**,
+  sitting at the top of the memory panel ahead of the real corpus. `make local-clean` added.
+- A 36-char external ID wrapped and broke the memory row's four-column grid.
+- Panel contrast was **1.08:1** (`--card` on `--ink`) — invisible on a compressed 1080p stream.
+- The chaos rig printed a single-host string for crdb-1 while documenting a kill of crdb-2, so the
+  connection never broke and the reconnect arm never fired. Multi-host string; kill crdb-1.
+
 ### 2026-08-04 — real-postmortem track (credential-free half)
 
 #### Added
