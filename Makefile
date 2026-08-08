@@ -13,7 +13,7 @@ PY_RUNTIME ?= python$(PY_VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help sync test lint fmt probe migrate seed local-load local-e2e local-eval deploy deploy-config function-url branches-init chaos-up chaos-conn chaos-down
+.PHONY: help sync test lint fmt probe migrate seed local-load local-e2e local-eval local-clean deploy deploy-config function-url branches-init chaos-up chaos-conn chaos-down
 
 help:
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -60,6 +60,24 @@ local-load: ## embed + load the corpus with the local backend (no AWS needed)
 local-e2e: ## POST an alert through the real handler on the local stack
 	@test -n "$$CRDB_CONN_STRING" || { echo "set CRDB_CONN_STRING (see .env.example)"; exit 1; }
 	$(LOCAL_ENV) uv run python scripts/local_e2e.py
+
+local-clean: ## delete rows left behind by tests and ad-hoc runs (never touches the corpus)
+	@# The DB-backed suite inserts `test-<uuid>` incidents and deletes them on teardown,
+	@# but a failed teardown (or an interrupted run) leaks them — and any that reached
+	@# write_incident are status='resolved' with an embedding, so they are *retrievable*
+	@# and turn up as memory matches. One did exactly that on the status page. Run this
+	@# before filming, and before reading any retrieval number.
+	@test -n "$$CRDB_CONN_STRING" || { echo "set CRDB_CONN_STRING (see .env.example)"; exit 1; }
+	@psql -v ON_ERROR_STOP=1 -q "$$CRDB_CONN_STRING" -c "\
+		DELETE FROM agent_runs WHERE incident_id IN (SELECT id FROM incidents \
+		  WHERE external_id LIKE 'test-%' OR external_id LIKE 'LOCAL-%' \
+		     OR external_id LIKE 'DEMO-%' OR external_id LIKE 'AB-%'); \
+		DELETE FROM working_state WHERE incident_id IN (SELECT id FROM incidents \
+		  WHERE external_id LIKE 'test-%' OR external_id LIKE 'LOCAL-%' \
+		     OR external_id LIKE 'DEMO-%' OR external_id LIKE 'AB-%'); \
+		DELETE FROM incidents WHERE external_id LIKE 'test-%' OR external_id LIKE 'LOCAL-%' \
+		     OR external_id LIKE 'DEMO-%' OR external_id LIKE 'AB-%';"
+	@psql -t -A -q "$$CRDB_CONN_STRING" -c "SELECT 'incidents remaining: ' || count(*) FROM incidents;"
 
 local-eval: ## AC2 retrieval eval on the local stack (PROVISIONAL — see the printout)
 	@test -n "$$CRDB_CONN_STRING" || { echo "set CRDB_CONN_STRING (see .env.example)"; exit 1; }

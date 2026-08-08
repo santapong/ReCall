@@ -148,7 +148,14 @@
         ? Math.round((Date.now() - Date.parse(m.resolved_at)) / 864e5) + "d" : "—";
       row.innerHTML = `<span class="dot">●</span><span class="id"></span>` +
                       `<span class="sim">${sim}</span><span class="age">${age}</span>`;
-      row.querySelector(".id").textContent = m.external_id || m.id.slice(0, 8);
+      // Truncate: the row is a fixed 4-column grid, so a long external_id (a UUID-ish
+      // one from an ad-hoc load, say) wraps onto a second line and shunts the
+      // similarity and age columns out of alignment — visible on camera. Full value
+      // stays available on hover.
+      const label = m.external_id || m.id.slice(0, 8);
+      const cell = row.querySelector(".id");
+      cell.textContent = label.length > 16 ? label.slice(0, 15) + "…" : label;
+      cell.title = label;
       box.appendChild(row);
     }
   }
@@ -246,8 +253,16 @@
       setLive(false, status.reason.message);
     }
     if (runlog.status === "fulfilled") {
-      renderLog(runlog.value.steps || []);
-      if (status.status !== "fulfilled") setLive(true, "run log only — no incident row yet");
+      const steps = runlog.value.steps || [];
+      renderLog(steps);
+      // Only *non-empty* steps count as a live signal. /runlog answers 200 with an
+      // empty list for an unknown incident — that is deliberate, so the page can poll
+      // before the row exists — but treating it as "live" made a wrong ID look
+      // healthy, which is the exact failure this indicator exists to catch.
+      if (status.status !== "fulfilled") {
+        if (steps.length) setLive(true, "run log only — no incident row yet");
+        else setLive(false, status.reason.message);
+      }
     }
   }
   poll();
