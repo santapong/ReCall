@@ -66,3 +66,35 @@ def test_scrub_is_idempotent():
     for s in ADVERSARIAL:
         once = scrub(s)
         assert scrub(once) == once
+
+
+# --- C1: the scrubber must not eat operational vocabulary --------------------
+
+# Verified failing before SAFE_PHRASES existed:
+#   "Token grace period expired" -> "Token [redacted] period expired"
+# Both committed corpora are name-free, so no existing test could catch this. It
+# bites on the human-typed resolution in the close→retrieve shot, and corrupts the
+# embedding that shot depends on matching.
+VOCABULARY = [
+    "Token grace period expired",
+    "the grace period is 30s",
+    "GRACE PERIOD exceeded on the billing worker",
+]
+
+
+def test_operational_vocabulary_survives_scrubbing():
+    for s in VOCABULARY:
+        assert scrub(s) == s, f"scrubber ate vocabulary: {scrub(s)!r}"
+
+
+def test_protected_phrases_do_not_smuggle_names_through():
+    """The guard must protect the phrase, not the name next to it."""
+    out = scrub("Grace Lindqvist extended the grace period")
+    assert "grace period" in out
+    assert "Lindqvist" not in out and "Grace L" not in out
+
+
+def test_vocabulary_protection_is_still_idempotent():
+    for s in VOCABULARY:
+        once = scrub(s)
+        assert scrub(once) == once

@@ -1,7 +1,13 @@
 # Fast suite on every PR and on the long-lived branches; full suite (real single-node
-# cockroach, all DB-backed tests) on develop and release/** pushes — mocked-DB tests
-# stay banned (docs/05), so the full job runs against the same engine the demo uses,
-# with the same vector-index flag the probe discovered (docs/02).
+# cockroach, all DB-backed tests) on PRs *and* on develop and release/** pushes —
+# mocked-DB tests stay banned (docs/05), so the full job runs against the same engine
+# the demo uses, with the same vector-index flag the probe discovered (docs/02).
+#
+# The full job runs on PRs because the README claims the three invariants "each fail CI
+# if broken". Two of them — citations validated against retrieved matches, and the
+# least-privilege role — are only observable against a real cluster, so while the full
+# job was push-only they were unverified on exactly the change that could break them.
+# It costs ~90s.
 name: ci
 
 on:
@@ -20,7 +26,7 @@ jobs:
       - run: uv run pytest -q
 
   full:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/'))
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')))
     runs-on: ubuntu-latest
     env:
       CRDB_CONN_STRING: postgresql://root@localhost:26257/defaultdb?sslmode=disable

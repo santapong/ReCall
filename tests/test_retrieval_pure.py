@@ -97,3 +97,23 @@ def test_broken_connection_is_retried_and_reconnected(monkeypatch):
 
     assert db.with_retry(flaky, max_attempts=3, base_delay=0.001) == "diagnosis landed"
     assert closed["n"] == 1, "the dead connection must be dropped before retrying"
+
+
+# --- C3: the model supplies k; the DB must not take it on trust --------------
+
+
+def test_clamp_k_bounds_a_runaway_request():
+    assert tools.clamp_k(100000) == tools.MAX_SEARCH_K
+    assert tools.clamp_k(0) == 1
+    assert tools.clamp_k(-5) == 1
+
+
+def test_clamp_k_leaves_sane_values_alone():
+    assert tools.clamp_k(5) == 5
+    assert tools.clamp_k(tools.MAX_SEARCH_K) == tools.MAX_SEARCH_K
+
+
+def test_clamp_k_accepts_the_default_and_rejects_nonsense():
+    assert tools.clamp_k("3") == 3  # Converse can hand back a stringified integer
+    with pytest.raises(ValueError):
+        tools.clamp_k("not-a-number")

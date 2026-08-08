@@ -33,7 +33,7 @@
 > status page, the seed loader, the AC2 eval harness, the `agent_runs` decision log, a corpus of
 > 10 real public postmortems, and a rehearsed 3-node kill rig. What has not yet happened is the
 > first *live* run — cloud credentials (CockroachDB Cloud + Bedrock) are the remaining gate.
-> 62 tests green, the DB-backed ones running in CI against a real single-node CockroachDB. Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
+> 102 tests green, the DB-backed ones running in CI against a real single-node CockroachDB (now on PRs too, so the invariants below are enforced where they break). Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## The problem
 
@@ -63,16 +63,20 @@ property of the code path, not of the model's good behaviour on the day.
 
 ## The guarantee — structural, not instructional
 
-Three invariants. None of them are honour-system, and each fails CI if broken.
+Four invariants. None of them are honour-system, and each fails CI if broken — including on
+pull requests, where the full DB-backed suite runs against a real cluster.
 
 | Invariant | Enforced by | Fails how |
 |---|---|---|
-| **The agent cannot cite an incident that doesn't exist** | `propose_diagnosis` validates every `cited_incident_ids` entry against the DB *before* the working-memory write | `LookupError` — the write never happens; the error goes back to the model in-band so it can correct itself, and lands in `agent_runs` as an `error` row |
+| **The agent cannot cite an incident it did not retrieve** | `propose_diagnosis` validates every `cited_incident_ids` entry against *this run's own* `working_state.retrieved_matches` — persisted by the loop, not the model, so it cannot be forged from inside the conversation | `LookupError` — the write never happens; the error goes back to the model in-band so it can correct itself, and lands in `agent_runs` as an `error` row |
 | **The agent cannot bluff when memory is empty** | `search_incidents` returns a confidence label from frozen distance thresholds; an empty `cited_incident_ids` is accepted *only* when confidence is `none` | `ValueError` — a diagnosis with no citations on a `high`/`low` branch is refused, not logged and shipped |
 | **The agent cannot reach anything but memory** | `TOOL_MANIFEST` is closed at four tools — no raw SQL, no execute, no shell | [`tests/test_manifest.py`](tests/test_manifest.py) fails on a fifth tool; [`tests/test_module_boundaries.py`](tests/test_module_boundaries.py) fails if `agent.py` imports psycopg or contains SQL |
+| **The agent cannot close an incident** | `write_incident` is filtered out of the `toolConfig` the diagnosis loop sends, so the model is never offered it, and `_dispatch` refuses it outright if a spec ever drifts back in | `ValueError` back to the model, an `error` row in `agent_runs`, and no write. [`tests/test_agent_loop.py`](tests/test_agent_loop.py) asserts the tool is absent from every Converse call |
 
-The manifest is also, deliberately, **propose-only**: Recall never executes a fix. It writes a
-diagnosis into working memory and stops. The close path is a separate tool a human triggers.
+The manifest is, deliberately, **propose-only**: Recall never executes a fix. It writes a
+diagnosis into working memory and stops. That is structural, not a prompt instruction — the
+diagnosis loop is not given the write tool at all, and the close path
+([`scripts/close.py`](scripts/close.py)) is a human-run script with no path from the model to it.
 
 This is the part that is hard to retrofit. Adding memory to an agent is a weekend; making its
 answers structurally refuse to exceed their evidence is the thing that decides whether an on-call
@@ -87,6 +91,28 @@ on any table, no DDL, and no write access to `runbooks`** (semantic memory chang
 seed/ops path, never through the agent's runtime). So even if every application-level guard failed
 at once, the blast radius of a compromised agent session is bounded by the database's own grants —
 it could not drop a table, erase history, or rewrite a runbook.
+
+The grants are exercised, not asserted: [`tests/test_app_role.py`](tests/test_app_role.py) opens a
+real connection *as* `recall_app` and proves each property. Writing it is what found the two holes
+that made the paragraph above untrue until now — the role had no `CONNECT`/`USAGE` and so could
+never have connected at all, and it inherited `CREATE` from the `public` pseudo-role, so "no DDL"
+was false.
+
+### What we don't harden, and why
+
+The demo's ingress is deliberately thin, and it is better to name that than to let a Production
+Readiness reviewer find it:
+
+- **Reads are public by design.** `GET /status` and `/runlog` are unauthenticated so the status
+  page — a static file with no backend — can poll them on camera. Anyone with the Function URL can
+  read every incident and every decision trace. The corpus is synthetic; a real deployment would
+  put this behind the same auth as the rest of the on-call tooling.
+- **Ingest is a shared secret in a plaintext env var**, not Secrets Manager or SigV4. It bounds
+  casual abuse of a URL that spends Bedrock tokens; it is not an identity system.
+- **Blast radius is capped by reserved concurrency** (5), set by `make deploy-config`, so a loop or
+  a scraper cannot run up an unbounded bill.
+- **No WAF, no per-IP rate limit, no request signing.** Out of scope for a hackathon entry with a
+  public demo URL and a fixed spend ceiling.
 
 ## Who it's for
 
@@ -254,7 +280,7 @@ With any CockroachDB — Cloud free tier or a local single-node
 ```bash
 make probe                   # DDL + 5 rows + one `<->` vector query, then cleans up
 make migrate                 # apply infra/migrations/*.sql in order (0001 schema, 0002 decision log)
-uv run pytest                # now 62/62 — the DB-backed tests run for real
+uv run pytest                # now 102 green — the DB-backed tests run for real
 ```
 
 The AC7 resilience rig (needs Docker):

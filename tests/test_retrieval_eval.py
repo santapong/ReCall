@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import db
+import embed as embed_mod
 import tools
 
 PAIRS = json.loads(
@@ -28,8 +29,14 @@ PASS_FLOOR = 18
 def _substrate():
     if not os.environ.get("CRDB_CONN_STRING"):
         pytest.skip("CRDB_CONN_STRING unset")
-    if not (os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("AWS_PROFILE")):
-        pytest.skip("no AWS credentials — search embeds the query via Bedrock")
+    # The local embedding backend needs no AWS at all. Scores from it are lexical and
+    # provisional (see lambda/embed.py) — this gate is only about whether the eval
+    # *can* run; the printed table names the backend that produced it.
+    if embed_mod.EMBED_BACKEND != "local" and not (
+        os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("AWS_PROFILE")
+    ):
+        pytest.skip("no AWS credentials and EMBED_BACKEND is not 'local' — "
+                    "search embeds the query via Bedrock")
     try:
         conn = db.get_conn()
         with conn.cursor() as cur:
@@ -62,5 +69,12 @@ def test_planted_match_in_top3_for_at_least_18_of_20(_substrate):
     for row in rows:
         print(f"{row[0]:<12}{row[1]:<12}{row[2]:<6}{row[3]:<6}{row[4]}")
     print(f"\n{hits}/{len(PAIRS)} planted matches in top-{TOP_K} (floor: {PASS_FLOOR})")
+    if embed_mod.EMBED_BACKEND == "local":
+        # The README screenshot must never be of this table. The stand-in is lexical,
+        # and AC2's eval set was rewritten precisely so that shared surface tokens
+        # could not carry the benchmark — so a high score here measures the wrong
+        # thing twice over.
+        print("PROVISIONAL — vectors from the local lexical stand-in, not Bedrock. "
+              "This is not a reading of retrieval quality; re-run against Titan.")
 
     assert hits >= PASS_FLOOR, f"AC2 fails: {hits}/{len(PAIRS)} < {PASS_FLOOR}"

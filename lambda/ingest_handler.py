@@ -9,6 +9,7 @@ handling).
 
 import base64
 import json
+import os
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -28,7 +29,13 @@ class Alert(BaseModel):
 
 
 def _response(status: int, body: dict) -> dict:
-    return {"statusCode": status, "headers": {"Content-Type": "application/json"},
+    # CORS is not optional here: the status page is a static file served from
+    # file:// or GitHub Pages, so without this header the browser blocks every read
+    # of the Function URL and the primary on-camera surface shows "waiting for
+    # incident…" forever. Reads are public by design for the demo (see README).
+    return {"statusCode": status,
+            "headers": {"Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*"},
             "body": json.dumps(body)}
 
 
@@ -53,6 +60,17 @@ def handler(event, context):
                                    "steps": tools.run_log(incident_id)})
         return _response(404, {"error": "unknown path"})
 
+    # POST spends Bedrock tokens on an unauthenticated public URL, so it takes a
+    # shared secret when one is configured. Deliberately POST-only: the status page
+    # must keep reading /status and /runlog without one. Absent env var = open, which
+    # is what local development and the test suite run with. This bounds casual abuse
+    # of the URL; it is not an identity system, and the README says so.
+    expected = os.environ.get("RECALL_INGEST_TOKEN")
+    if expected:
+        headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        if headers.get("x-recall-token") != expected:
+            return _response(401, {"error": "missing or invalid x-recall-token"})
+
     raw = event.get("body") or ""
     if event.get("isBase64Encoded"):
         raw = base64.b64decode(raw).decode("utf-8")
@@ -61,8 +79,20 @@ def handler(event, context):
     except ValidationError as exc:
         return _response(400, {"error": "invalid alert payload", "detail": exc.errors()})
 
-    incident_id = tools.insert_incident(
-        alert.external_id, alert.service, alert.title, alert.description, alert.severity,
-    )
-    diagnosis = run_agent(incident_id, alert.service, alert.title, alert.description)
+    # Loud to the caller, not only to CloudWatch. Unhandled, a DB blip or a Bedrock
+    # error surfaces as a bare 502 from the Function URL with the real reason buried
+    # in logs — the worst possible failure mode mid-demo. Still loud: 500, with the
+    # exception type and message in the body.
+    try:
+        incident_id = tools.insert_incident(
+            alert.external_id, alert.service, alert.title, alert.description, alert.severity,
+        )
+        # AC12: ?memory=off runs the same alert through the same model with the memory
+        # tools withheld. It is a real second arm, not a display toggle.
+        memory_on = (event.get("queryStringParameters") or {}).get("memory") != "off"
+        diagnosis = run_agent(incident_id, alert.service, alert.title, alert.description,
+                              memory=memory_on)
+    except Exception as exc:
+        return _response(500, {"error": "diagnosis failed",
+                               "detail": f"{type(exc).__name__}: {exc}"})
     return _response(200, {"incident_id": incident_id, "response": diagnosis})
