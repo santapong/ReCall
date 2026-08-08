@@ -391,7 +391,9 @@ _RUN_LOG_SQL = """
     SELECT seq, step_type, name, outcome, latency_ms, input_tokens, output_tokens,
            confidence, detail, created_at
     FROM agent_runs
-    WHERE incident_id = %(id)s
+    WHERE incident_id = (
+        SELECT id FROM incidents WHERE id::STRING = %(id)s OR external_id = %(id)s
+    )
     ORDER BY run_id, seq
 """
 
@@ -400,7 +402,12 @@ def run_log(incident_id: str) -> list[dict]:
     """Read path for the decision log (non-manifest — the status page and the camera
     read this, not the agent). Replays every step of every run for one incident, in
     execution order. Pairs with AS OF SYSTEM TIME: working_state says what memory
-    believed at 02:14, this says what the agent did to get there and what it cost."""
+    believed at 02:14, this says what the agent did to get there and what it cost.
+
+    Accepts an internal or external ID, exactly like status_snapshot. It used to take
+    only a UUID, so the status page — which passes one `incident_id` to both endpoints
+    — rendered its incident fine and 500'd on the decision log the moment the demo
+    curled an INC-style ID."""
 
     def _fetch():
         conn = db.get_conn()

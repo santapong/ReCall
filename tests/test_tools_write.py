@@ -51,6 +51,9 @@ def incident():
     yield incident_id
     conn = db.get_conn()
     with conn.cursor() as cur:
+        # agent_runs first: it holds an FK to incidents, so any test that logs a step
+        # would otherwise break teardown rather than fail on its own merits.
+        cur.execute("DELETE FROM agent_runs WHERE incident_id = %s", (incident_id,))
         cur.execute("DELETE FROM working_state WHERE incident_id = %s", (incident_id,))
         cur.execute("DELETE FROM incidents WHERE id = %s", (incident_id,))
 
@@ -191,3 +194,24 @@ def test_health_counts_incidents(incident):
 def test_write_incident_unknown_id_raises():
     with pytest.raises(LookupError, match="no incident"):
         tools.write_incident(str(uuid.uuid4()), "resolution for a ghost")
+
+
+def test_run_log_accepts_an_external_id(incident):
+    """F1 surfaced this: /status resolves external IDs and /runlog did not, while the
+    status page passes one incident_id to both. The demo curls INC-style IDs, so the
+    decision-log panel 500'd on camera while the rest of the page rendered fine."""
+    tools.log_step(run_id=str(uuid.uuid4()), incident_id=incident, seq=0,
+                   step_type="model_turn", name="test-model", outcome="success",
+                   latency_ms=1)
+    external_id = tools.status_snapshot(incident)["external_id"]
+
+    by_uuid = tools.run_log(incident)
+    by_external = tools.run_log(external_id)
+
+    assert len(by_uuid) == 1
+    assert by_external == by_uuid
+
+
+def test_run_log_of_an_unknown_id_is_empty_not_an_error():
+    """The page polls this before the incident row exists."""
+    assert tools.run_log("NOPE-does-not-exist") == []

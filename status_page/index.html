@@ -7,7 +7,17 @@
 <style>
   /* docs/03 tokens — tuned for 1080p video, not for a dashboard */
   :root {
-    --ink:#12130f; --card:#1a1b16; --rule:#2c2d26; --text:#e9e7dd;
+    /* --card was #1a1b16 on --ink #12130f: a 1.08:1 contrast ratio, where the only
+       thing separating a panel from the page was a 1px gap that disappears into
+       banding on a compressed 1080p stream and on a projector. Lifted, and every
+       panel now carries an explicit rule as well.
+
+       Measured against these values: card/ink 1.15:1 (was 1.08:1), and the rule —
+       which is what actually draws the panel edge, via the 1px grid gap — is 1.95:1
+       on card and 2.24:1 on ink. Text contrast stays AA on the lifted card:
+       text 13.1:1, muted 5.4:1, alarm 4.6:1, teal 6.8:1. Lifting --card further
+       would push muted and alarm below 4.5:1, so the rule carries the separation. */
+    --ink:#12130f; --card:#20211a; --rule:#4e4f41; --text:#e9e7dd;
     --muted:#97948a; --amber:#e6a53f; --teal:#5fb8a0; --alarm:#c9705c;
   }
   * { box-sizing:border-box; margin:0; }
@@ -43,8 +53,14 @@
   #badge.none { color:var(--muted); }
   #diagnosis { margin-top:10px; white-space:pre-wrap; }
   #log { list-style:none; color:var(--muted); font-size:.92rem; }
-  #log li { padding:2px 0; border-bottom:1px solid var(--rule); }
+  #log li { padding:2px 0; border-bottom:1px solid var(--rule); white-space:pre; }
   #log li:first-child { color:var(--text); }
+  /* An error row is not a failure to hide — a rejected citation is the enforcement
+     working, and it is the shot the demo script points at. */
+  #log li.err { color:var(--alarm); }
+  #live { font-size:.85rem; letter-spacing:.04em; }
+  .live-ok { color:var(--teal); }
+  .live-bad { color:var(--alarm); }
   .empty { color:var(--muted); }
   a, button { color:inherit; }
   :focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
@@ -54,7 +70,7 @@
 <body>
 <main>
   <header class="bar">
-    <div class="brand">ORBITAL · <b>Recall</b></div>
+    <div class="brand">ORBITAL · <b>Recall</b> <span id="live" class="mono live-bad" role="status">● no data</span></div>
     <div class="mono"><span id="inc-ref">—</span><span id="clock" aria-label="elapsed incident time">00:00:00</span></div>
   </header>
 
@@ -94,15 +110,6 @@
   const $ = id => document.getElementById(id);
 
   let openedAt = null, lastState = {};
-
-  function log(line) {
-    const li = document.createElement("li");
-    const t = new Date().toTimeString().slice(0, 8);
-    li.textContent = `${t}  ${line}`;
-    const ul = $("log");
-    ul.prepend(li);
-    while (ul.children.length > 6) ul.removeChild(ul.lastChild);
-  }
 
   // The signature element: ticks every second, never stops — including during
   // the node kill. It is information (proof the take is live), not decoration,
@@ -159,22 +166,80 @@
     if (s.proposed_diagnosis && MEMORY_ON) {
       d.textContent = s.proposed_diagnosis; d.className = "";
     }
-    // Event log: one line per observed state change.
-    if (conf && conf !== lastState.confidence) log(`retrieval done — confidence ${conf}`);
-    if (s.proposed_diagnosis && s.proposed_diagnosis !== lastState.proposed_diagnosis)
-      log("diagnosis proposed");
-    if (s.status !== lastState.status && lastState.status) log(`status → ${s.status}`);
     lastState = s;
   }
 
+  // The decision log, straight from agent_runs via GET /runlog — what the agent
+  // actually did, with real per-step latency and token counts. It replaces a log
+  // built from state deltas observed in the browser, which looked like a system log
+  // and was not one: every line was inferred, and it could never show the `error`
+  // rows that ARE the refusal proof.
+  //
+  // It also fills the dead air. Between the POST and the first working_state write
+  // the page used to sit on "waiting for incident…" while the agent — the product —
+  // was invisible. agent_runs rows appear as each step executes.
+  function renderLog(steps) {
+    const ul = $("log");
+    ul.innerHTML = "";
+    if (!steps.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "no steps yet";
+      ul.appendChild(li);
+      return;
+    }
+    for (const s of steps.slice().reverse()) {   // newest first
+      const li = document.createElement("li");
+      if (s.outcome === "error") li.className = "err";
+      const tokens = (s.input_tokens || s.output_tokens)
+        ? `${s.input_tokens || 0}+${s.output_tokens || 0}tok` : "";
+      li.textContent = [
+        String(s.seq).padStart(2, "0"), s.step_type, s.name,
+        s.outcome, `${s.latency_ms}ms`, tokens,
+      ].join("  ");
+      if (s.detail) li.title = s.detail;   // the rejected citation, on hover
+      ul.appendChild(li);
+    }
+  }
+
+  // One indicator, so a wrong ID, a cold Lambda and a CORS-blocked request stop
+  // looking identical — all three used to render as a page that seemed not to have
+  // loaded, which is the worst thing to be debugging mid-take.
+  function setLive(ok, why) {
+    const el = $("live");
+    el.textContent = ok ? "● live" : "● no data";
+    el.className = "mono live-" + (ok ? "ok" : "bad");
+    el.title = why || "";
+  }
+
+  async function getJSON(path) {
+    const r = await fetch(`${API}${path}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+
   async function poll() {
-    if (!INCIDENT) { $("title").textContent = "add ?incident_id=… to the URL"; return; }
-    try {
-      const r = await fetch(`${API}/status?incident_id=${encodeURIComponent(INCIDENT)}`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      render(await r.json());
-    } catch (e) {
-      log(`poll failed: ${e.message} — retrying`);
+    if (!INCIDENT) {
+      $("title").textContent = "add ?incident_id=… to the URL";
+      setLive(false, "no incident_id in the URL");
+      return;
+    }
+    const id = encodeURIComponent(INCIDENT);
+    // Both in flight together: the run log is live well before working_state has
+    // anything to show, so it must not wait on /status.
+    const [status, runlog] = await Promise.allSettled([
+      getJSON(`/status?incident_id=${id}`),
+      getJSON(`/runlog?incident_id=${id}`),
+    ]);
+    if (status.status === "fulfilled") {
+      render(status.value);
+      setLive(true);
+    } else {
+      setLive(false, status.reason.message);
+    }
+    if (runlog.status === "fulfilled") {
+      renderLog(runlog.value.steps || []);
+      if (status.status !== "fulfilled") setLive(true, "run log only — no incident row yet");
     }
   }
   poll();
