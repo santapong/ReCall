@@ -33,7 +33,7 @@
 > status page, the seed loader, the AC2 eval harness, the `agent_runs` decision log, a corpus of
 > 10 real public postmortems, and a rehearsed 3-node kill rig. What has not yet happened is the
 > first *live* run — cloud credentials (CockroachDB Cloud + Bedrock) are the remaining gate.
-> 102 tests green, the DB-backed ones running in CI against a real single-node CockroachDB (now on PRs too, so the invariants below are enforced where they break). Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
+> 115 tests green, the DB-backed ones running in CI against a real single-node CockroachDB (now on PRs too, so the invariants below are enforced where they break). Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## The problem
 
@@ -63,13 +63,14 @@ property of the code path, not of the model's good behaviour on the day.
 
 ## The guarantee — structural, not instructional
 
-Four invariants. None of them are honour-system, and each fails CI if broken — including on
+Five invariants. None of them are honour-system, and each fails CI if broken — including on
 pull requests, where the full DB-backed suite runs against a real cluster.
 
 | Invariant | Enforced by | Fails how |
 |---|---|---|
 | **The agent cannot cite an incident it did not retrieve** | `propose_diagnosis` validates every `cited_incident_ids` entry against *this run's own* `working_state.retrieved_matches` — persisted by the loop, not the model, so it cannot be forged from inside the conversation | `LookupError` — the write never happens; the error goes back to the model in-band so it can correct itself, and lands in `agent_runs` as an `error` row |
-| **The agent cannot bluff when memory is empty** | `search_incidents` returns a confidence label from frozen distance thresholds; an empty `cited_incident_ids` is accepted *only* when confidence is `none` | `ValueError` — a diagnosis with no citations on a `high`/`low` branch is refused, not logged and shipped |
+| **The agent cannot bluff when memory is empty** | `search_incidents` returns a confidence label from frozen distance thresholds; empty citations are accepted *only* when confidence is `none` | `ValueError` — a diagnosis with no citations on a `high`/`low` branch is refused, not logged and shipped |
+| **The agent cannot cite a runbook it did not retrieve** | AC3 is "a real incident ID **+ a runbook step**", so `cited_runbook_ids` is validated the same way, against the `runbook_ids` this run's search returned, and is required on every `high`/`low` branch | `LookupError` for an unretrieved runbook, `ValueError` for none at all — the write never happens either way |
 | **The agent cannot reach anything but memory** | `TOOL_MANIFEST` is closed at four tools — no raw SQL, no execute, no shell | [`tests/test_manifest.py`](tests/test_manifest.py) fails on a fifth tool; [`tests/test_module_boundaries.py`](tests/test_module_boundaries.py) fails if `agent.py` imports psycopg or contains SQL |
 | **The agent cannot close an incident** | `write_incident` is filtered out of the `toolConfig` the diagnosis loop sends, so the model is never offered it, and `_dispatch` refuses it outright if a spec ever drifts back in | `ValueError` back to the model, an `error` row in `agent_runs`, and no write. [`tests/test_agent_loop.py`](tests/test_agent_loop.py) asserts the tool is absent from every Converse call |
 
@@ -279,15 +280,40 @@ With any CockroachDB — Cloud free tier or a local single-node
 
 ```bash
 make probe                   # DDL + 5 rows + one `<->` vector query, then cleans up
-make migrate                 # apply infra/migrations/*.sql in order (0001 schema, 0002 decision log)
-uv run pytest                # now 102 green — the DB-backed tests run for real
+make migrate                 # apply infra/migrations/*.sql in order (schema, decision log, role, runbook citations)
+uv run pytest                # now 115 green — the DB-backed tests run for real
+```
+
+**No AWS access yet?** The whole system still runs. Two explicit opt-in backends
+(`EMBED_BACKEND=local`, `BEDROCK_BACKEND=local`) replace Titan and Converse with a
+deterministic local stand-in, so the loop, the decision log and the status page are
+exercisable end to end without a credential:
+
+```bash
+make local-load              # embed + load the 92-doc corpus, no AWS
+make local-e2e               # POST an alert through the real handler
+make local-clean             # drop rows left by tests/ad-hoc runs before measuring
+```
+
+The stand-in is **lexical, not semantic**: it is never selected by a missing
+credential, it warns on stderr, its model turns are logged as `local-scripted`, and
+the AC2 table prints `PROVISIONAL`. Retrieval scores and confidence thresholds from
+it do not transfer to Titan, and nothing filmed runs on it.
+
+Deploying to AWS (first time creates the execution role and the function; after that
+`make deploy` updates it):
+
+```bash
+make create-function         # IAM role + Lambda + config + public Function URL
+make deploy                  # subsequent code updates, config re-applied each time
 ```
 
 The AC7 resilience rig (needs Docker):
 
 ```bash
 make chaos-up                # 3-node local cluster, vector index flag enabled
-docker stop recall-crdb-2    # the kill — survivors keep serving
+make chaos-conn              # the multi-host connection string — export it first
+docker stop recall-crdb-1    # kill the node the connection is actually on
 make chaos-down              # stop and wipe
 ```
 

@@ -93,7 +93,7 @@ def _retrieve(incident_id, *match_ids, confidence="high"):
 
 def test_propose_diagnosis_with_valid_citation_persists(incident):
     _retrieve(incident, incident)
-    tools.propose_diagnosis(incident, "webhook pool exhausted", [incident])
+    tools.propose_diagnosis(incident, "webhook pool exhausted", [incident], ["rb-1"])
     row = _working_state(incident)
     assert row[0] == "webhook pool exhausted"
 
@@ -174,7 +174,7 @@ def test_write_incident_scrubs_resolves_and_embeds(incident):
 
 def test_status_snapshot_reads_incident_and_working_state(incident):
     _retrieve(incident, incident)
-    tools.propose_diagnosis(incident, "pool exhausted", [incident])
+    tools.propose_diagnosis(incident, "pool exhausted", [incident], ["rb-1"])
     snap = tools.status_snapshot(incident)
     assert snap["incident_id"] == incident
     assert snap["proposed_diagnosis"] == "pool exhausted"
@@ -215,3 +215,55 @@ def test_run_log_accepts_an_external_id(incident):
 def test_run_log_of_an_unknown_id_is_empty_not_an_error():
     """The page polls this before the incident row exists."""
     assert tools.run_log("NOPE-does-not-exist") == []
+
+
+# --- T4, runbook half: AC3 is "incident ID **+ runbook step**" ---------------
+# docs/01:48 always required both. propose_diagnosis took no runbook parameter, so
+# the runbook half lived only in prompts/system.md rule 4 — instructional, not
+# structural, exactly the gap T1 closed for write_incident.
+
+
+def test_runbook_citation_is_validated_and_persisted(incident):
+    _retrieve(incident, incident)          # offers runbook_ids=["rb-1"]
+    tools.propose_diagnosis(incident, "pool exhausted; drain per rb-1",
+                            [incident], ["rb-1"])
+    conn = db.get_conn()
+    with conn.cursor() as cur:
+        cur.execute("SELECT cited_runbook_ids FROM working_state WHERE incident_id = %s",
+                    (incident,))
+        assert cur.fetchone()[0] == ["rb-1"]
+
+
+def test_unretrieved_runbook_is_refused(incident):
+    """Same provenance rule as incidents: a runbook the agent never pulled cannot be
+    cited, even if it exists."""
+    _retrieve(incident, incident)          # only rb-1 was offered
+    with pytest.raises(LookupError, match="runbook ids"):
+        tools.propose_diagnosis(incident, "citing a runbook I never saw",
+                                [incident], ["rb-99"])
+    assert _working_state(incident)[0] is None   # nothing persisted
+
+
+def test_high_confidence_diagnosis_without_a_runbook_is_refused(incident):
+    """The half that was missing entirely: a grounded diagnosis citing incidents but
+    no runbook step used to pass, contradicting docs/01's AC3."""
+    _retrieve(incident, incident)
+    with pytest.raises(ValueError, match="cited_runbook_ids is empty"):
+        tools.propose_diagnosis(incident, "no runbook step named", [incident], [])
+    assert _working_state(incident)[0] is None
+
+
+def test_honesty_branch_still_needs_neither_citation(incident):
+    """AC13 outranks AC3: with nothing close in memory the agent must be able to say
+    so and stop, citing nothing at all."""
+    tools.record_retrieval(incident, tools.SearchResult(
+        query="q", service="billing", confidence="none", matches=[], runbook_ids=[]))
+    tools.propose_diagnosis(incident, "no close match in memory; escalating", [], [])
+    assert _working_state(incident)[0] == "no close match in memory; escalating"
+
+
+def test_status_snapshot_exposes_cited_runbooks(incident):
+    """The page and the camera read this."""
+    _retrieve(incident, incident)
+    tools.propose_diagnosis(incident, "d", [incident], ["rb-1"])
+    assert tools.status_snapshot(incident)["cited_runbook_ids"] == ["rb-1"]

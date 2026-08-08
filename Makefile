@@ -13,7 +13,7 @@ PY_RUNTIME ?= python$(PY_VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help sync test lint fmt probe migrate seed local-load local-e2e local-eval local-clean deploy deploy-config function-url branches-init chaos-up chaos-conn chaos-down
+.PHONY: help sync test lint fmt probe migrate seed local-load local-e2e local-eval local-clean create-function _create-function-code deploy deploy-config function-url branches-init chaos-up chaos-conn chaos-down
 
 help:
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -82,6 +82,51 @@ local-clean: ## delete rows left behind by tests and ad-hoc runs (never touches 
 local-eval: ## AC2 retrieval eval on the local stack (PROVISIONAL — see the printout)
 	@test -n "$$CRDB_CONN_STRING" || { echo "set CRDB_CONN_STRING (see .env.example)"; exit 1; }
 	$(LOCAL_ENV) uv run pytest tests/test_retrieval_eval.py -s
+
+ROLE_NAME ?= $(FUNCTION_NAME)-role
+
+create-function: ## one-time: execution role + the Lambda itself (deploy only UPDATES)
+	@# `make deploy` runs update-function-code, which fails if the function does not
+	@# exist — and nothing in the repo created it, so the documented deploy path had
+	@# no starting point. This is that starting point. Safe to re-run: every step
+	@# tolerates "already exists".
+	@#
+	@# Permissions: the managed basic-execution policy (CloudWatch Logs) plus exactly
+	@# one Bedrock action, bedrock:InvokeModel — the function embeds and converses and
+	@# does nothing else, so there is no bedrock:* wildcard. Resource IS "*", because
+	@# the model ids are supplied at runtime by env var and pinning ARNs here would
+	@# break the documented Nova fallback; the action scope is the real constraint.
+	@# The database is reached by connection string, not IAM, so no DB grant belongs
+	@# here — that is infra/migrations/0003 (recall_app).
+	@test -n "$$BEDROCK_MODEL_ID" || { echo "set BEDROCK_MODEL_ID (see .env.example)"; exit 1; }
+	aws iam create-role --role-name $(ROLE_NAME) \
+		--assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
+		2>/dev/null || echo "(role already exists)"
+	aws iam attach-role-policy --role-name $(ROLE_NAME) \
+		--policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+	aws iam put-role-policy --role-name $(ROLE_NAME) --policy-name recall-bedrock-invoke \
+		--policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["bedrock:InvokeModel"],"Resource":"*"}]}'
+	@# IAM is eventually consistent: a role used too soon after creation fails with
+	@# "cannot be assumed by Lambda". Ten seconds is the usual cure.
+	@echo "== waiting for the role to propagate"; sleep 10
+	$(MAKE) _create-function-code
+
+_create-function-code:
+	rm -rf build && mkdir -p build/pkg
+	uv pip install --target build/pkg --python-platform x86_64-manylinux2014 \
+		--python-version $(PY_VERSION) --only-binary :all: 'psycopg[binary]' pydantic
+	cp lambda/*.py build/pkg/
+	mkdir -p build/pkg/prompts && cp prompts/system.md build/pkg/prompts/
+	cd build/pkg && zip -qr ../lambda.zip . -x '__pycache__/*'
+	aws lambda create-function --function-name $(FUNCTION_NAME) \
+		--runtime $(PY_RUNTIME) --handler ingest_handler.handler \
+		--role "$$(aws iam get-role --role-name $(ROLE_NAME) --query Role.Arn --output text)" \
+		--timeout 60 --memory-size 1024 \
+		--zip-file fileb://build/lambda.zip \
+		2>/dev/null || echo "(function already exists — use make deploy)"
+	aws lambda wait function-active --function-name $(FUNCTION_NAME)
+	$(MAKE) deploy-config
+	$(MAKE) function-url
 
 deploy: ## bundle lambda/ + prompts/ + deps into a zip, update the function AND its config
 	rm -rf build && mkdir -p build/pkg

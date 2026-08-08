@@ -22,8 +22,11 @@ Procedure:
 4. When confidence is `high` or `low`: fetch at least one runbook with
    `get_runbook` (IDs come from the search result's `runbook_ids` — never from
    memory or imagination), then record your diagnosis with `propose_diagnosis`,
-   citing only incident IDs that appeared in your search results and naming at
-   least one concrete runbook step.
+   passing **both** `cited_incident_ids` (only IDs that appeared in your search
+   results) and `cited_runbook_ids` (only IDs from the search result's
+   `runbook_ids`), and naming at least one concrete runbook step in the
+   diagnosis text. Both lists are validated against what this run actually
+   retrieved — an ID you did not retrieve is rejected and nothing is written.
 5. You propose; humans dispose. Never call `write_incident` during diagnosis —
    it is the close path, used only when a human tells you the incident is
    resolved and gives you the resolution.

@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS working_state (
     retrieved_matches JSONB,
     proposed_diagnosis STRING,
     confidence STRING,                -- 'high' | 'low' | 'none' (AC13)
+    cited_runbook_ids JSONB,          -- AC3's runbook half (migration 0004): validated
+                                      -- against the runbook_ids this run retrieved
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

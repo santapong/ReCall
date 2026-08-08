@@ -11,6 +11,7 @@ Hard rules (CLAUDE.md 1–2, enforced by tests/):
 All SQL is parameterized; f-string SQL is a rejected commit (docs/05).
 """
 
+import json
 import math
 import os
 from datetime import datetime, timezone
@@ -246,10 +247,13 @@ _CONFIDENCE_SQL = """
 """
 
 _PROPOSE_SQL = """
-    INSERT INTO working_state (incident_id, proposed_diagnosis, updated_at)
-    VALUES (%(incident_id)s, %(diagnosis)s, now())
+    INSERT INTO working_state (incident_id, proposed_diagnosis, cited_runbook_ids,
+                               updated_at)
+    VALUES (%(incident_id)s, %(diagnosis)s, %(cited_runbook_ids)s, now())
     ON CONFLICT (incident_id) DO UPDATE
-        SET proposed_diagnosis = excluded.proposed_diagnosis, updated_at = now()
+        SET proposed_diagnosis = excluded.proposed_diagnosis,
+            cited_runbook_ids = excluded.cited_runbook_ids,
+            updated_at = now()
 """
 
 _CLOSE_SQL = """
@@ -263,7 +267,8 @@ _CLOSE_SQL = """
 
 _STATUS_SQL = """
     SELECT i.id, i.external_id, i.service, i.title, i.severity, i.status, i.opened_at,
-           ws.proposed_diagnosis, ws.confidence, ws.retrieved_matches, ws.updated_at
+           ws.proposed_diagnosis, ws.confidence, ws.retrieved_matches, ws.updated_at,
+           ws.cited_runbook_ids
     FROM incidents i LEFT JOIN working_state ws ON ws.incident_id = i.id
     WHERE i.id::STRING = %(id)s OR i.external_id = %(id)s
 """
@@ -292,6 +297,7 @@ def status_snapshot(incident_id: str) -> dict | None:
         "proposed_diagnosis": row[7], "confidence": row[8],
         "retrieved_matches": row[9],
         "updated_at": row[10].isoformat() if row[10] else None,
+        "cited_runbook_ids": row[11] or [],
     }
 
 
@@ -452,8 +458,9 @@ def run_log(incident_id: str) -> list[dict]:
     ]
 
 
-def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list[str]) -> None:
-    """Write working_state ONLY. cited_incident_ids must be non-empty unless
+def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list[str],
+                      cited_runbook_ids: list[str] | None = None) -> None:
+    """Write working_state ONLY. Both citation lists must be non-empty unless
     confidence == 'none' (AC3). Every ID is validated before the write — an ID the
     agent did not actually retrieve raises and never persists.
 
@@ -463,7 +470,19 @@ def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list
     agent never saw. Checking against this run's own retrieved_matches turns "the ID
     exists" into "the agent could only cite what it actually retrieved", which is
     the claim AC3 is worth making.
+
+    cited_runbook_ids is AC3's other half. docs/01:48 requires ">=1 real incident ID
+    **+ >=1 runbook step**", but this function took no runbook parameter, so that half
+    was enforced only by a sentence in prompts/system.md rule 4 — the same
+    instructional-not-structural gap T1 closed for write_incident. Runbook IDs are
+    validated against the runbook_ids search_incidents returned for this run, which
+    record_retrieval persists alongside the matches.
+
+    The parameter defaults to None rather than being required so that the honesty
+    branch and existing callers keep working; the *emptiness* rule below is what
+    enforces it on the high/low branches.
     """
+    cited_runbook_ids = list(cited_runbook_ids or [])
 
     def _check():
         conn = db.get_conn()
@@ -497,7 +516,34 @@ def propose_diagnosis(incident_id: str, diagnosis: str, cited_incident_ids: list
                     f"{confidence!r} — a diagnosis without citations is only legal "
                     "on the honesty branch (AC3/AC13)"
                 )
-            cur.execute(_PROPOSE_SQL, {"incident_id": incident_id, "diagnosis": diagnosis})
+
+            # AC3's runbook half, enforced the same way and against the same record.
+            if cited_runbook_ids:
+                offered = {str(r) for r in (retrieved.get("runbook_ids") or [])}
+                if not offered:
+                    raise LookupError(
+                        "diagnosis cites runbooks but this run's search returned none "
+                        "— call search_incidents before proposing (AC3)"
+                    )
+                unknown_rb = [r for r in cited_runbook_ids if r not in offered]
+                if unknown_rb:
+                    raise LookupError(
+                        f"diagnosis cites runbook ids {unknown_rb} that were not in "
+                        "this run's search results — refusing to persist a citation "
+                        "the agent did not retrieve (AC3)"
+                    )
+            elif confidence != "none":
+                raise ValueError(
+                    "cited_runbook_ids is empty but confidence is "
+                    f"{confidence!r} — docs/01 AC3 requires at least one runbook step "
+                    "alongside the incident citation; only the honesty branch may "
+                    "propose without one"
+                )
+
+            cur.execute(_PROPOSE_SQL, {
+                "incident_id": incident_id, "diagnosis": diagnosis,
+                "cited_runbook_ids": json.dumps(cited_runbook_ids),
+            })
 
     db.with_retry(_check)
 

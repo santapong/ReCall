@@ -58,12 +58,21 @@ TOOL_SPECS = [
     {"toolSpec": {
         "name": "propose_diagnosis",
         "description": "Record the proposed diagnosis for the active incident, citing "
-                       "real incident IDs from the search results.",
+                       "real incident IDs and runbook IDs from the search results.",
         "inputSchema": {"json": {"type": "object", "properties": {
             "incident_id": {"type": "string"},
             "diagnosis": {"type": "string"},
-            "cited_incident_ids": {"type": "array", "items": {"type": "string"}},
-        }, "required": ["incident_id", "diagnosis", "cited_incident_ids"]}}}},
+            "cited_incident_ids": {
+                "type": "array", "items": {"type": "string"},
+                "description": "IDs of incidents that appeared in your search results. "
+                               "Empty only when confidence is 'none'."},
+            "cited_runbook_ids": {
+                "type": "array", "items": {"type": "string"},
+                "description": "IDs from the search result's runbook_ids. Empty only "
+                               "when confidence is 'none' (AC3 requires a runbook step "
+                               "alongside the incident citation)."},
+        }, "required": ["incident_id", "diagnosis", "cited_incident_ids",
+                        "cited_runbook_ids"]}}}},
     {"toolSpec": {
         "name": "write_incident",
         "description": "Close path only: persist the human-confirmed resolution. "
@@ -220,6 +229,7 @@ def local_converse(messages):
         "diagnosis": "Matches prior incidents in memory; follow the cited runbook step "
                      "(local backend — not a model judgement).",
         "cited_incident_ids": cited,
+        "cited_runbook_ids": runbook_ids[:1],
     })
 
 

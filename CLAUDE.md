@@ -37,7 +37,7 @@ Top-level folder indexes (read the folder's `index.md` before working in it): `.
 
 ## Current state (2026-08-04)
 
-- **All application code is built and offline-verified; cloud credentials are the only gate.** The 4-tool surface (read + write), the Converse loop, ingest + `GET /status`/`/health`, the status page, the seed loader (`infra/seed/load.py`), the AC2 eval harness, the `agent_runs` decision log (+ `GET /runlog`), the AC7 chaos rig (`infra/chaos/`, kill rehearsed), the `recall_app` least-privilege role, and the 10-PIR real-postmortem corpus (`infra/seed/pir_corpus.json`, service `public`, AC2-isolated) all exist. Suite: 102 green (CI runs the full DB-backed suite on PRs and develop/release pushes); DB-backed tests run against a real local single-node (v25.2.2, user-space install; probe answer: vector index = flag-then-works, recorded in `docs/02`).
+- **All application code is built and offline-verified; cloud credentials are the only gate.** The 4-tool surface (read + write), the Converse loop, ingest + `GET /status`/`/health`, the status page, the seed loader (`infra/seed/load.py`), the AC2 eval harness, the `agent_runs` decision log (+ `GET /runlog`), the AC7 chaos rig (`infra/chaos/`, kill rehearsed), the `recall_app` least-privilege role, and the 10-PIR real-postmortem corpus (`infra/seed/pir_corpus.json`, service `public`, AC2-isolated) all exist. Suite: 115 green (CI runs the full DB-backed suite on PRs and develop/release pushes); DB-backed tests run against a real local single-node (v25.2.2, user-space install; probe answer: vector index = flag-then-works, recorded in `docs/02`).
 - Still awaiting the human: CockroachDB Cloud cluster + MCP service-account key, AWS keys + Bedrock model-access grant (`scripts/probe_runbook.md` steps A–C). Then, in order: Cloud probe/migrate → `probe_bedrock.py` → `load.py` → tune the two thresholds → AC2 eval → `make deploy` → live end-to-end.
 - One open decision marker: embedding dimension, expected `1024`, resolved in-file the day `probe_bedrock.py` prints it. D1–D4 are otherwise closed (`docs/08`).
 - Source artifacts (charter HTML v1, council report, pitch panel, original design doc) belong in `docs/plans/` — the human drops them in; where they disagree with this pack, this pack wins.
@@ -48,7 +48,7 @@ Keep this section updated as commands land:
 
 ```
 uv sync                 # deps
-uv run pytest           # 102 tests; DB-backed ones need CRDB_CONN_STRING (local node)
+uv run pytest           # 115 tests; DB-backed ones need CRDB_CONN_STRING (local node)
 uv run ruff check .     # lint (make lint / make fmt)
 make probe              # vector probe against your cluster (needs CRDB_CONN_STRING)
 make migrate            # apply infra/migrations/*.sql in order
